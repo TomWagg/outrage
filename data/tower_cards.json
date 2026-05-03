@@ -1,0 +1,30 @@
+{
+  "cards": [
+    { "name": "File",                     "category": "burglary",  "count": 6, "value": 2 },
+    { "name": "Dynamite",                 "category": "burglary",  "count": 3, "value": 5 },
+    { "name": "Crowbar",                  "category": "burglary",  "count": 4, "value": 4 },
+    { "name": "A Key to the Jewel Cases", "category": "burglary",  "count": 1, "value": 9 },
+
+    { "name": "Brace of Pistols",         "category": "weapon",    "count": 3, "value": 15 },
+    { "name": "Crossbow",                 "category": "weapon",    "count": 3, "value": 10 },
+    { "name": "Suit of Armour",           "category": "weapon",    "count": 3, "value": 8,  "defender_only": true },
+    { "name": "Mace",                     "category": "weapon",    "count": 5, "value": 2 },
+    { "name": "Sword",                    "category": "weapon",    "count": 3, "value": 5 },
+    { "name": "Dagger",                   "category": "weapon",    "count": 4, "value": 3 },
+
+    { "name": "Ladder",                   "category": "traversal", "count": 3, "effect_key": "traversal_beauchamp_escape" },
+    { "name": "Rope",                     "category": "traversal", "count": 3, "effect_key": "traversal_beauchamp_escape" },
+
+    { "name": "Tower Pass",               "category": "utility",   "count": 3, "effect_key": "tower_pass" },
+    { "name": "Sanctuary",                "category": "utility",   "count": 4, "effect_key": "sanctuary" },
+    { "name": "Disguise",                 "category": "utility",   "count": 3, "effect_key": "disguise" },
+    { "name": "Royal Pardon",             "category": "utility",   "count": 3, "effect_key": "royal_pardon" },
+    { "name": "Rack Pardon",              "category": "utility",   "count": 1, "effect_key": "rack_pardon" },
+    { "name": "Confession",               "category": "utility",   "count": 2, "effect_key": "confession" },
+
+    { "name": "Firecrackers",             "category": "custom",    "count": 1, "effect_key": "firecrackers" },
+    { "name": "Lasso",                    "category": "custom",    "count": 2, "effect_key": "lasso" },
+    { "name": "Binary Disruption",        "category": "custom",    "count": 1, "effect_key": "binary_disruption" },
+    { "name": "Mass Accretor",            "category": "custom",    "count": 1, "effect_key": "mass_accretor" }
+  ]
+}

@@ -1,0 +1,48 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+
+# Virtual environments (conda env lives outside the repo; ignore local venvs)
+.venv/
+venv/
+env/
+
+# Test / coverage artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Node / TypeScript ─────────────────────────────────────────────────────────
+node_modules/
+
+# Vite build output — regenerated with `npm run build`
+web/dist/
+
+# ── Runtime game state ────────────────────────────────────────────────────────
+# These are written at runtime; the saves/ directory itself is kept (and the
+# server creates it if missing) but live JSON is not part of the source.
+saves/*.json
+saves/*.bak
+saves/*.tmp
+
+# ── Local config ──────────────────────────────────────────────────────────────
+.env
+.env.*
+.claude/
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

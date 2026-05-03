@@ -1,0 +1,236 @@
+{
+  "cards": [
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "broad_arrow_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "bell_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "flint_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "royal_armouries"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "brick_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "martin_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "museum"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "constable_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "lanthorn_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "devereux_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "wakefield_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "salt_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "beauchamp_tower"
+      }
+    },
+    {
+      "effect_key": "go_to_location",
+      "count": 1,
+      "params": {
+        "location": "player_choice"
+      }
+    },
+    {
+      "effect_key": "call_warder_to_post",
+      "count": 2,
+      "params": {
+        "post": "chooser"
+      }
+    },
+    {
+      "effect_key": "call_warder_to_post",
+      "count": 2,
+      "params": {
+        "post": "scaffold"
+      }
+    },
+    {
+      "effect_key": "call_warder_to_post",
+      "count": 2,
+      "params": {
+        "post": "lanthorn"
+      }
+    },
+    {
+      "effect_key": "call_warder_to_post",
+      "count": 2,
+      "params": {
+        "post": "waterloo"
+      }
+    },
+    {
+      "effect_key": "call_warder_to_post",
+      "count": 2,
+      "params": {
+        "post": "chapel"
+      }
+    },
+    {
+      "effect_key": "return_warder_to_barracks",
+      "count": 10
+    },
+    {
+      "effect_key": "go_to_jewel_view",
+      "count": 1,
+      "params": {
+        "jewel": "sword"
+      }
+    },
+    {
+      "effect_key": "go_to_jewel_view",
+      "count": 1,
+      "params": {
+        "jewel": "sceptre"
+      }
+    },
+    {
+      "effect_key": "go_to_jewel_view",
+      "count": 1,
+      "params": {
+        "jewel": "orb"
+      }
+    },
+    {
+      "effect_key": "go_to_jewel_view",
+      "count": 1,
+      "params": {
+        "jewel": "crown_prince_of_wales"
+      }
+    },
+    {
+      "effect_key": "go_to_jewel_view",
+      "count": 1,
+      "params": {
+        "jewel": "crown_st_edward"
+      }
+    },
+    {
+      "effect_key": "pecked_by_ravens",
+      "count": 2
+    },
+    {
+      "effect_key": "rest_on_bench",
+      "count": 2
+    },
+    {
+      "effect_key": "photo_with_warder",
+      "count": 2
+    },
+    {
+      "effect_key": "stopped_and_searched",
+      "count": 2
+    },
+    {
+      "effect_key": "clerk_tea_exception",
+      "count": 2
+    },
+    {
+      "effect_key": "ghost",
+      "count": 1
+    },
+    {
+      "effect_key": "queens_birthday",
+      "count": 1
+    },
+    {
+      "effect_key": "lost",
+      "count": 1
+    },
+    {
+      "effect_key": "chief_yeoman_passes",
+      "count": 1
+    },
+    {
+      "effect_key": "bowyer_questioning",
+      "count": 1
+    },
+    {
+      "effect_key": "shop_for_film",
+      "count": 1
+    },
+    {
+      "effect_key": "governors_tea",
+      "count": 1
+    },
+    {
+      "effect_key": "beauchamp_imprisonment",
+      "count": 1
+    },
+    {
+      "effect_key": "rack_of_torment",
+      "count": 1
+    },
+    {
+      "effect_key": "metallicity",
+      "count": 1
+    }
+  ]
+}

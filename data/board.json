@@ -1,0 +1,3987 @@
+{
+  "_draft": "Wall walk (77 spaces) complete. White Tower forward-only path, Chapel of St John, Chapel Royal, Museum, Hospital, Royal Armouries, 4 warder posts, 2 benches, outside-south exterior row with Cradle Tower escape + slides, and inner-ward hookpoints to wall walk transcribed. Inner-ward walkable grid (generic white/circled squares between the named structures) still needs full coordinate list. Bloody Tower, Shop, Barracks, Raven-Cards pile, Tower Green, and wall-walk slides still to be placed. Coords for SVG render TBD.",
+  "_open_questions": [],
+  "spaces": [
+    {
+      "id": "ww00_start",
+      "label": "Start",
+      "region": "wall_walk",
+      "kind": "start",
+      "wall_walk_order": 0,
+      "neighbors": [
+        "ww01"
+      ],
+      "coords": [
+        -1,
+        -3
+      ]
+    },
+    {
+      "id": "ww01",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 1,
+      "neighbors": [
+        "ww00_start",
+        "ww02"
+      ],
+      "coords": [
+        0,
+        -3
+      ]
+    },
+    {
+      "id": "ww02",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 2,
+      "neighbors": [
+        "ww01",
+        "ww03"
+      ],
+      "coords": [
+        1,
+        -3
+      ]
+    },
+    {
+      "id": "ww03",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 3,
+      "neighbors": [
+        "ww02",
+        "ww04_guidebook"
+      ],
+      "coords": [
+        2,
+        -3
+      ]
+    },
+    {
+      "id": "ww04_guidebook",
+      "label": "Buy a guidebook",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 4,
+      "neighbors": [
+        "ww03",
+        "ww05",
+        "iw_shop"
+      ],
+      "coords": [
+        3,
+        -3
+      ],
+      "action": {
+        "key": "go_to_and_miss_turn",
+        "params": {
+          "destination_kind": "shop"
+        }
+      }
+    },
+    {
+      "id": "ww05",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 5,
+      "neighbors": [
+        "ww04_guidebook",
+        "ww06"
+      ],
+      "coords": [
+        4,
+        -3
+      ]
+    },
+    {
+      "id": "ww06",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 6,
+      "neighbors": [
+        "ww05",
+        "ww07"
+      ],
+      "coords": [
+        5,
+        -3
+      ]
+    },
+    {
+      "id": "ww07",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 7,
+      "neighbors": [
+        "ww06",
+        "ww08"
+      ],
+      "coords": [
+        5,
+        -4
+      ]
+    },
+    {
+      "id": "ww08",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 8,
+      "neighbors": [
+        "ww07",
+        "ww09_st_thomas"
+      ],
+      "coords": [
+        5,
+        -5
+      ]
+    },
+    {
+      "id": "ww09_st_thomas",
+      "label": "St Thomas's Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 9,
+      "neighbors": [
+        "ww08",
+        "ww10"
+      ],
+      "coords_region": [
+        [
+          6,
+          -5
+        ],
+        [
+          9,
+          -5
+        ]
+      ]
+    },
+    {
+      "id": "ww10",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 10,
+      "neighbors": [
+        "ww09_st_thomas",
+        "ww11"
+      ],
+      "coords": [
+        10,
+        -5
+      ]
+    },
+    {
+      "id": "ww11",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 11,
+      "neighbors": [
+        "ww10",
+        "ww12"
+      ],
+      "coords": [
+        10,
+        -4
+      ]
+    },
+    {
+      "id": "ww12",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 12,
+      "neighbors": [
+        "ww11",
+        "ww13"
+      ],
+      "coords": [
+        10,
+        -3
+      ]
+    },
+    {
+      "id": "ww13",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 13,
+      "neighbors": [
+        "ww12",
+        "ww14_wakefield"
+      ],
+      "coords": [
+        10,
+        -2
+      ]
+    },
+    {
+      "id": "ww14_wakefield",
+      "label": "Wakefield Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 14,
+      "neighbors": [
+        "ww13",
+        "ww15"
+      ],
+      "coords_region": [
+        [
+          9,
+          -1
+        ],
+        [
+          11,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "ww15",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 15,
+      "neighbors": [
+        "ww14_wakefield",
+        "ww16_go_qh"
+      ],
+      "coords": [
+        12,
+        0
+      ]
+    },
+    {
+      "id": "ww16_go_qh",
+      "label": "Go to Queen's House",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 16,
+      "neighbors": [
+        "ww15",
+        "ww17"
+      ],
+      "action": {
+        "key": "go_to",
+        "params": {
+          "destination_kind": "queens_house"
+        }
+      },
+      "coords": [
+        13,
+        0
+      ]
+    },
+    {
+      "id": "ww17",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 17,
+      "neighbors": [
+        "ww16_go_qh",
+        "ww18_lanthorn"
+      ],
+      "coords": [
+        14,
+        0
+      ]
+    },
+    {
+      "id": "ww18_lanthorn",
+      "label": "Lanthorn Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 18,
+      "neighbors": [
+        "ww17",
+        "ww19"
+      ],
+      "coords_region": [
+        [
+          15,
+          0
+        ],
+        [
+          16,
+          0
+        ]
+      ]
+    },
+    {
+      "id": "ww19",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 19,
+      "neighbors": [
+        "ww18_lanthorn",
+        "ww20"
+      ],
+      "coords": [
+        17,
+        0
+      ]
+    },
+    {
+      "id": "ww20",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 20,
+      "neighbors": [
+        "ww19",
+        "ww21_miss"
+      ],
+      "coords": [
+        18,
+        0
+      ]
+    },
+    {
+      "id": "ww21_miss",
+      "label": "Miss a turn",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 21,
+      "neighbors": [
+        "ww20",
+        "ww22"
+      ],
+      "action": {
+        "key": "miss_turn"
+      },
+      "coords": [
+        19,
+        0
+      ]
+    },
+    {
+      "id": "ww22",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 22,
+      "neighbors": [
+        "ww21_miss",
+        "ww23_salt"
+      ],
+      "coords": [
+        20,
+        0
+      ]
+    },
+    {
+      "id": "ww23_salt",
+      "label": "Salt Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 23,
+      "neighbors": [
+        "ww22",
+        "ww24",
+        "iw_chapel_royal"
+      ],
+      "_note": "Adjacent to Chapel Royal via secret passage.",
+      "coords": [
+        21,
+        0
+      ]
+    },
+    {
+      "id": "ww24",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 24,
+      "neighbors": [
+        "ww23_salt",
+        "ww25"
+      ],
+      "coords": [
+        21,
+        1
+      ]
+    },
+    {
+      "id": "ww25",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 25,
+      "neighbors": [
+        "ww24",
+        "ww26_go_shop"
+      ],
+      "coords": [
+        21,
+        2
+      ]
+    },
+    {
+      "id": "ww26_go_shop",
+      "label": "Go to Shop",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 26,
+      "neighbors": [
+        "ww25",
+        "ww27"
+      ],
+      "action": {
+        "key": "go_to",
+        "params": {
+          "destination_kind": "shop"
+        }
+      },
+      "coords": [
+        21,
+        3
+      ]
+    },
+    {
+      "id": "ww27",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 27,
+      "neighbors": [
+        "ww26_go_shop",
+        "ww28_miss"
+      ],
+      "coords": [
+        21,
+        4
+      ]
+    },
+    {
+      "id": "ww28_miss",
+      "label": "Miss a turn",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 28,
+      "neighbors": [
+        "ww27",
+        "ww29_broad_arrow"
+      ],
+      "action": {
+        "key": "miss_turn"
+      },
+      "coords": [
+        21,
+        5
+      ]
+    },
+    {
+      "id": "ww29_broad_arrow",
+      "label": "Broad Arrow Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 29,
+      "neighbors": [
+        "ww28_miss",
+        "ww30"
+      ],
+      "action": {
+        "key": "surrender_weapons"
+      },
+      "coords_region": [
+        [
+          21,
+          6
+        ],
+        [
+          21,
+          7
+        ]
+      ]
+    },
+    {
+      "id": "ww30",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 30,
+      "neighbors": [
+        "ww29_broad_arrow",
+        "ww31_qh_accredit"
+      ],
+      "coords": [
+        21,
+        8
+      ]
+    },
+    {
+      "id": "ww31_qh_accredit",
+      "label": "Go to Queen's House (accredited)",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 31,
+      "neighbors": [
+        "ww30",
+        "ww32"
+      ],
+      "action": {
+        "key": "go_to_and_accredit",
+        "params": {
+          "destination_kind": "queens_house",
+          "ends_turn_on_landing": true
+        }
+      },
+      "coords": [
+        21,
+        9
+      ]
+    },
+    {
+      "id": "ww32",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 32,
+      "neighbors": [
+        "ww31_qh_accredit",
+        "ww33",
+        "iw_20_10"
+      ],
+      "_note": "Inner-ward hookpoint: (20,10) yellow, 2 spaces behind Constable between it and Broad Arrow.",
+      "coords": [
+        21,
+        10
+      ]
+    },
+    {
+      "id": "ww33",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 33,
+      "neighbors": [
+        "ww32",
+        "ww34_constable"
+      ],
+      "coords": [
+        21,
+        11
+      ]
+    },
+    {
+      "id": "ww34_constable",
+      "label": "Constable Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 34,
+      "neighbors": [
+        "ww33",
+        "ww35"
+      ],
+      "coords_region": [
+        [
+          21,
+          12
+        ],
+        [
+          21,
+          13
+        ]
+      ]
+    },
+    {
+      "id": "ww35",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 35,
+      "neighbors": [
+        "ww34_constable",
+        "ww36"
+      ],
+      "coords": [
+        21,
+        14
+      ]
+    },
+    {
+      "id": "ww36",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 36,
+      "neighbors": [
+        "ww35",
+        "ww37_go_qh"
+      ],
+      "coords": [
+        21,
+        15
+      ]
+    },
+    {
+      "id": "ww37_go_qh",
+      "label": "Go to Queen's House",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 37,
+      "neighbors": [
+        "ww36",
+        "ww38"
+      ],
+      "action": {
+        "key": "go_to",
+        "params": {
+          "destination_kind": "queens_house"
+        }
+      },
+      "coords": [
+        21,
+        16
+      ]
+    },
+    {
+      "id": "ww38",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 38,
+      "neighbors": [
+        "ww37_go_qh",
+        "ww39_martin"
+      ],
+      "coords": [
+        21,
+        17
+      ]
+    },
+    {
+      "id": "ww39_martin",
+      "label": "Martin Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 39,
+      "neighbors": [
+        "ww38",
+        "ww40",
+        "iw_20_18"
+      ],
+      "_note": "Inner-ward hookpoint: (20,18) NE corner adjacency.",
+      "coords_region": [
+        [
+          21,
+          18
+        ],
+        [
+          21,
+          19
+        ]
+      ]
+    },
+    {
+      "id": "ww40",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 40,
+      "neighbors": [
+        "ww39_martin",
+        "ww41_change"
+      ],
+      "coords": [
+        20,
+        19
+      ]
+    },
+    {
+      "id": "ww41_change",
+      "label": "Change a card",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 41,
+      "neighbors": [
+        "ww40",
+        "ww42"
+      ],
+      "action": {
+        "key": "change_card"
+      },
+      "coords": [
+        19,
+        19
+      ]
+    },
+    {
+      "id": "ww42",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 42,
+      "neighbors": [
+        "ww41_change",
+        "ww43_brick"
+      ],
+      "coords": [
+        18,
+        19
+      ]
+    },
+    {
+      "id": "ww43_brick",
+      "label": "Brick Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 43,
+      "neighbors": [
+        "ww42",
+        "ww44"
+      ],
+      "coords_region": [
+        [
+          16,
+          19
+        ],
+        [
+          17,
+          19
+        ]
+      ]
+    },
+    {
+      "id": "ww44",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 44,
+      "neighbors": [
+        "ww43_brick",
+        "ww45_go_broad_arrow"
+      ],
+      "coords": [
+        15,
+        19
+      ]
+    },
+    {
+      "id": "ww45_go_broad_arrow",
+      "label": "Go to Broad Arrow Tower",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 45,
+      "neighbors": [
+        "ww44",
+        "ww46"
+      ],
+      "action": {
+        "key": "go_to",
+        "params": {
+          "space_id": "ww29_broad_arrow"
+        }
+      },
+      "coords": [
+        14,
+        19
+      ]
+    },
+    {
+      "id": "ww46",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 46,
+      "neighbors": [
+        "ww45_go_broad_arrow",
+        "ww47_bowyer"
+      ],
+      "coords": [
+        13,
+        19
+      ]
+    },
+    {
+      "id": "ww47_bowyer",
+      "label": "Bowyer Tower",
+      "region": "wall_walk",
+      "kind": "bowyer_tower",
+      "wall_walk_order": 47,
+      "neighbors": [
+        "ww46",
+        "ww48"
+      ],
+      "coords_region": [
+        [
+          11,
+          19
+        ],
+        [
+          12,
+          19
+        ]
+      ]
+    },
+    {
+      "id": "ww48",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 48,
+      "neighbors": [
+        "ww47_bowyer",
+        "ww49_extra_turn"
+      ],
+      "coords": [
+        10,
+        19
+      ]
+    },
+    {
+      "id": "ww49_extra_turn",
+      "label": "Extra turn",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 49,
+      "neighbors": [
+        "ww48",
+        "ww50"
+      ],
+      "action": {
+        "key": "extra_turn",
+        "params": {
+          "resets_consecutive_doubles": true
+        }
+      },
+      "coords": [
+        9,
+        19
+      ]
+    },
+    {
+      "id": "ww50",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 50,
+      "neighbors": [
+        "ww49_extra_turn",
+        "ww51",
+        "iw_8_18"
+      ],
+      "_note": "Inner-ward hookpoint: (8,18) yellow, 2 spaces behind Flint between Bowyer and Flint.",
+      "coords": [
+        8,
+        19
+      ]
+    },
+    {
+      "id": "ww51",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 51,
+      "neighbors": [
+        "ww50",
+        "ww52_flint"
+      ],
+      "coords": [
+        7,
+        19
+      ]
+    },
+    {
+      "id": "ww52_flint",
+      "label": "Flint Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 52,
+      "neighbors": [
+        "ww51",
+        "ww53"
+      ],
+      "coords_region": [
+        [
+          5,
+          19
+        ],
+        [
+          6,
+          19
+        ]
+      ]
+    },
+    {
+      "id": "ww53",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 53,
+      "neighbors": [
+        "ww52_flint",
+        "ww54_go_qh"
+      ],
+      "coords": [
+        4,
+        19
+      ]
+    },
+    {
+      "id": "ww54_go_qh",
+      "label": "Go to Queen's House",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 54,
+      "neighbors": [
+        "ww53",
+        "ww55"
+      ],
+      "action": {
+        "key": "go_to",
+        "params": {
+          "destination_kind": "queens_house"
+        }
+      },
+      "coords": [
+        3,
+        19
+      ]
+    },
+    {
+      "id": "ww55",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 55,
+      "neighbors": [
+        "ww54_go_qh",
+        "ww56_devereux"
+      ],
+      "coords": [
+        2,
+        19
+      ]
+    },
+    {
+      "id": "ww56_devereux",
+      "label": "Devereux Tower",
+      "region": "wall_walk",
+      "kind": "devereux",
+      "wall_walk_order": 56,
+      "neighbors": [
+        "ww55",
+        "ww57",
+        "iw_2_18"
+      ],
+      "_note": "Inner-ward hookpoint: (2,18) NW corner adjacency.",
+      "coords_region": [
+        [
+          0,
+          17
+        ],
+        [
+          1,
+          19
+        ]
+      ]
+    },
+    {
+      "id": "ww57",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 57,
+      "neighbors": [
+        "ww56_devereux",
+        "ww58_change"
+      ],
+      "coords": [
+        0,
+        16
+      ]
+    },
+    {
+      "id": "ww58_change",
+      "label": "Change a card",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 58,
+      "neighbors": [
+        "ww57",
+        "ww59"
+      ],
+      "action": {
+        "key": "change_card"
+      },
+      "coords": [
+        0,
+        15
+      ]
+    },
+    {
+      "id": "ww59",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 59,
+      "neighbors": [
+        "ww58_change",
+        "ww60_questioned"
+      ],
+      "coords": [
+        0,
+        14
+      ]
+    },
+    {
+      "id": "ww60_questioned",
+      "label": "Questioned by a guard",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 60,
+      "neighbors": [
+        "ww59",
+        "ww61"
+      ],
+      "action": {
+        "key": "miss_turn"
+      },
+      "coords_region": [
+        [
+          0,
+          12
+        ],
+        [
+          0,
+          13
+        ]
+      ]
+    },
+    {
+      "id": "ww61",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 61,
+      "neighbors": [
+        "ww60_questioned",
+        "ww62_beauchamp"
+      ],
+      "coords": [
+        0,
+        11
+      ]
+    },
+    {
+      "id": "ww62_beauchamp",
+      "label": "Beauchamp Tower",
+      "region": "wall_walk",
+      "kind": "beauchamp_tower",
+      "wall_walk_order": 62,
+      "neighbors": [
+        "ww61",
+        "ww63"
+      ],
+      "coords_region": [
+        [
+          0,
+          9
+        ],
+        [
+          0,
+          10
+        ]
+      ]
+    },
+    {
+      "id": "ww63",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 63,
+      "neighbors": [
+        "ww62_beauchamp",
+        "ww64",
+        "iw_1_8"
+      ],
+      "_note": "Inner-ward hookpoint: (1,8) yellow, immediately past Beauchamp down the west wall.",
+      "coords": [
+        0,
+        8
+      ]
+    },
+    {
+      "id": "ww64",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 64,
+      "neighbors": [
+        "ww63",
+        "ww65_go_back"
+      ],
+      "coords": [
+        0,
+        7
+      ]
+    },
+    {
+      "id": "ww65_go_back",
+      "label": "Go back the number thrown",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 65,
+      "neighbors": [
+        "ww64",
+        "ww66"
+      ],
+      "action": {
+        "key": "go_back_by_roll",
+        "params": {
+          "uses_landing_roll": true
+        }
+      },
+      "coords": [
+        0,
+        6
+      ]
+    },
+    {
+      "id": "ww66",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 66,
+      "neighbors": [
+        "ww65_go_back",
+        "ww67"
+      ],
+      "coords": [
+        0,
+        5
+      ]
+    },
+    {
+      "id": "ww67",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 67,
+      "neighbors": [
+        "ww66",
+        "ww68"
+      ],
+      "coords": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": "ww68",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 68,
+      "neighbors": [
+        "ww67",
+        "ww69_change"
+      ],
+      "coords": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": "ww69_change",
+      "label": "Change a card",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 69,
+      "neighbors": [
+        "ww68",
+        "ww70"
+      ],
+      "action": {
+        "key": "change_card"
+      },
+      "coords": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": "ww70",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 70,
+      "neighbors": [
+        "ww69_change",
+        "ww71_bell"
+      ],
+      "coords": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "ww71_bell",
+      "label": "Bell Tower",
+      "region": "wall_walk",
+      "kind": "tower",
+      "wall_walk_order": 71,
+      "neighbors": [
+        "ww70",
+        "ww72"
+      ],
+      "coords": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ww72",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 72,
+      "neighbors": [
+        "ww71_bell",
+        "ww73"
+      ],
+      "coords": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "ww73",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 73,
+      "neighbors": [
+        "ww72",
+        "ww74"
+      ],
+      "coords": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": "ww74",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 74,
+      "neighbors": [
+        "ww73",
+        "ww75_swap"
+      ],
+      "coords": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": "ww75_swap",
+      "label": "Swap a card with another player",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 75,
+      "neighbors": [
+        "ww74",
+        "ww76"
+      ],
+      "coords": [
+        4,
+        0
+      ],
+      "action": {
+        "key": "swap_random_with_other_player"
+      }
+    },
+    {
+      "id": "ww76",
+      "label": "",
+      "region": "wall_walk",
+      "kind": "normal",
+      "wall_walk_order": 76,
+      "neighbors": [
+        "ww75_swap",
+        "ww77_queens_house",
+        "iw_bloody_tower"
+      ],
+      "coords": [
+        5,
+        0
+      ]
+    },
+    {
+      "id": "ww77_queens_house",
+      "label": "Queen's House",
+      "region": "wall_walk",
+      "kind": "queens_house",
+      "wall_walk_order": 77,
+      "coords_region": [
+        [
+          2,
+          1
+        ],
+        [
+          6,
+          2
+        ]
+      ],
+      "neighbors": [
+        "ww76",
+        "iw_5_3"
+      ]
+    },
+    {
+      "_section": "INNER WARD \u2014 hookpoint cells (placeholders for the generic walkable grid; full list TBD)"
+    },
+    {
+      "_section": "INNER WARD \u2014 named structures"
+    },
+    {
+      "id": "iw_chapel_royal",
+      "label": "Chapel Royal of St Peter Ad Vincula",
+      "region": "inner_ward",
+      "kind": "chapel_royal",
+      "coords_region": [
+        [
+          3,
+          16
+        ],
+        [
+          7,
+          17
+        ]
+      ],
+      "neighbors": [
+        "iw_2_16"
+      ],
+      "_note": "Connects to Salt Tower via secret passage."
+    },
+    {
+      "id": "iw_bench_10_13",
+      "label": "Bench",
+      "region": "inner_ward",
+      "kind": "bench",
+      "coords": [
+        10,
+        13
+      ],
+      "neighbors": [
+        "iw_10_14"
+      ]
+    },
+    {
+      "id": "iw_bench_16_9",
+      "label": "Bench",
+      "region": "inner_ward",
+      "kind": "bench",
+      "coords": [
+        16,
+        9
+      ],
+      "neighbors": [
+        "iw_17_9"
+      ]
+    },
+    {
+      "id": "iw_museum",
+      "label": "Museum",
+      "region": "inner_ward",
+      "kind": "museum",
+      "coords_region": [
+        [
+          19,
+          11
+        ],
+        [
+          20,
+          13
+        ]
+      ],
+      "neighbors": [
+        "iw_18_12"
+      ],
+      "_note": "Gives a tower card on landing (same mechanic as a tower)."
+    },
+    {
+      "id": "iw_hospital",
+      "label": "Hospital",
+      "region": "inner_ward",
+      "kind": "hospital",
+      "coords_region": [
+        [
+          19,
+          7
+        ],
+        [
+          20,
+          9
+        ]
+      ],
+      "neighbors": [
+        "iw_18_8"
+      ]
+    },
+    {
+      "id": "iw_royal_armouries",
+      "label": "Royal Armouries",
+      "region": "inner_ward",
+      "kind": "royal_armouries",
+      "coords_region": [
+        [
+          19,
+          3
+        ],
+        [
+          20,
+          5
+        ]
+      ],
+      "neighbors": [
+        "iw_18_4"
+      ]
+    },
+    {
+      "id": "iw_shop",
+      "label": "Shop",
+      "region": "inner_ward",
+      "kind": "shop",
+      "neighbors": [
+        "ww04_guidebook"
+      ],
+      "_shape": "4 wide x 1 tall, directly below (outside) the 2nd-5th yellow squares after START (ww02-ww05). Exits only via the 4th yellow (ww04_guidebook, 'Buy a guidebook')."
+    },
+    {
+      "id": "iw_rack",
+      "label": "The Rack",
+      "region": "inner_ward",
+      "kind": "rack",
+      "coords_region": [
+        [
+          13,
+          8
+        ],
+        [
+          13,
+          10
+        ]
+      ],
+      "neighbors": [
+        "wt_13_11_rack_sender"
+      ],
+      "_note": "Vertical 1x3 span. Only connects to the Rack Sender (wt_13_11)."
+    },
+    {
+      "id": "iw_bloody_tower",
+      "label": "Bloody Tower",
+      "region": "inner_ward",
+      "kind": "bloody_tower",
+      "coords_region": [
+        [
+          6,
+          0
+        ],
+        [
+          8,
+          0
+        ]
+      ],
+      "neighbors": [
+        "ww76"
+      ]
+    },
+    {
+      "id": "barracks",
+      "label": "Barracks",
+      "region": "special",
+      "kind": "barracks",
+      "coords_region": [
+        [
+          10,
+          15
+        ],
+        [
+          17,
+          15
+        ]
+      ],
+      "neighbors": [],
+      "_note": "Warder storage only; not a playable player space. Rendered as a display strip."
+    },
+    {
+      "_section": "INNER WARD \u2014 generic walkable grid (generated by tools/gen_iw_grid.py). All cells default to kind=raven_trigger; circled (non-raven) cells TBD."
+    },
+    {
+      "_section": "INNER WARD \u2014 cells referenced by the White Tower / Chapel of St John"
+    },
+    {
+      "_section": "WARDER POSTS \u2014 4 Yeoman Warder posts (2 cells each)"
+    },
+    {
+      "id": "post_scaffold",
+      "label": "Scaffold Warder Post",
+      "region": "inner_ward",
+      "kind": "warder_post",
+      "warder_post_id": "scaffold",
+      "coords_region": [
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          10
+        ]
+      ],
+      "neighbors": [
+        "iw_7_9",
+        "iw_8_9",
+        "iw_7_11",
+        "iw_8_11"
+      ]
+    },
+    {
+      "id": "post_chapel",
+      "label": "Chapel Warder Post",
+      "region": "inner_ward",
+      "kind": "warder_post",
+      "warder_post_id": "chapel",
+      "coords_region": [
+        [
+          1,
+          14
+        ],
+        [
+          2,
+          14
+        ]
+      ],
+      "neighbors": [
+        "iw_2_13",
+        "iw_2_15"
+      ]
+    },
+    {
+      "id": "post_waterloo",
+      "label": "Waterloo Warder Post",
+      "region": "inner_ward",
+      "kind": "warder_post",
+      "warder_post_id": "waterloo",
+      "coords_region": [
+        [
+          12,
+          13
+        ],
+        [
+          12,
+          14
+        ]
+      ],
+      "neighbors": [
+        "iw_11_14",
+        "iw_13_13",
+        "iw_13_14"
+      ]
+    },
+    {
+      "id": "post_lanthorn",
+      "label": "Lanthorn Warder Post",
+      "region": "inner_ward",
+      "kind": "warder_post",
+      "warder_post_id": "lanthorn",
+      "coords_region": [
+        [
+          16,
+          2
+        ],
+        [
+          17,
+          2
+        ]
+      ],
+      "neighbors": [
+        "iw_15_2",
+        "iw_18_2",
+        "iw_16_3",
+        "iw_17_3"
+      ]
+    },
+    {
+      "_section": "WHITE TOWER \u2014 forward-only path. Immune to Raven-card / other-player forced moves once entered."
+    },
+    {
+      "id": "wt_12_2",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        12,
+        2
+      ],
+      "white_tower_order": 0,
+      "neighbors": [
+        "wt_11_2"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_2",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        11,
+        2
+      ],
+      "white_tower_order": 1,
+      "neighbors": [
+        "wt_12_2",
+        "wt_10_2"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_10_2",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        10,
+        2
+      ],
+      "white_tower_order": 2,
+      "neighbors": [
+        "wt_11_2",
+        "wt_10_3"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_10_3",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        10,
+        3
+      ],
+      "white_tower_order": 3,
+      "neighbors": [
+        "wt_10_2",
+        "wt_11_3"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_3",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        11,
+        3
+      ],
+      "white_tower_order": 4,
+      "neighbors": [
+        "wt_10_3",
+        "wt_12_3"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_12_3",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        12,
+        3
+      ],
+      "white_tower_order": 5,
+      "neighbors": [
+        "wt_11_3",
+        "wt_13_3"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_13_3",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        13,
+        3
+      ],
+      "white_tower_order": 6,
+      "neighbors": [
+        "wt_12_3",
+        "wt_13_4"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_13_4",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        13,
+        4
+      ],
+      "white_tower_order": 7,
+      "neighbors": [
+        "wt_13_3",
+        "wt_12_4"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_12_4",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        12,
+        4
+      ],
+      "white_tower_order": 8,
+      "neighbors": [
+        "wt_13_4",
+        "wt_11_4"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_4",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        11,
+        4
+      ],
+      "white_tower_order": 9,
+      "neighbors": [
+        "wt_12_4",
+        "wt_11_5"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_5",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        11,
+        5
+      ],
+      "white_tower_order": 10,
+      "neighbors": [
+        "wt_11_4",
+        "wt_11_6_sword"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_6_sword",
+      "label": "Sword (Jewel)",
+      "region": "white_tower",
+      "kind": "jewel",
+      "jewel_id": "sword",
+      "coords": [
+        11,
+        6
+      ],
+      "white_tower_order": 11,
+      "neighbors": [
+        "wt_11_5",
+        "wt_11_7_sceptre"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_7_sceptre",
+      "label": "Sceptre (Jewel)",
+      "region": "white_tower",
+      "kind": "jewel",
+      "jewel_id": "sceptre",
+      "coords": [
+        11,
+        7
+      ],
+      "white_tower_order": 12,
+      "neighbors": [
+        "wt_11_6_sword",
+        "wt_11_8_orb"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_8_orb",
+      "label": "Orb (Jewel)",
+      "region": "white_tower",
+      "kind": "jewel",
+      "jewel_id": "orb",
+      "coords": [
+        11,
+        8
+      ],
+      "white_tower_order": 13,
+      "neighbors": [
+        "wt_11_7_sceptre",
+        "wt_11_9_crown_pow"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_9_crown_pow",
+      "label": "Prince of Wales Crown (Jewel)",
+      "region": "white_tower",
+      "kind": "jewel",
+      "jewel_id": "crown_prince_of_wales",
+      "coords": [
+        11,
+        9
+      ],
+      "white_tower_order": 14,
+      "neighbors": [
+        "wt_11_8_orb",
+        "wt_11_10_crown_ste"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_10_crown_ste",
+      "label": "St Edward's Crown (Jewel)",
+      "region": "white_tower",
+      "kind": "jewel",
+      "jewel_id": "crown_st_edward",
+      "coords": [
+        11,
+        10
+      ],
+      "white_tower_order": 15,
+      "neighbors": [
+        "wt_11_9_crown_pow",
+        "wt_11_11"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_11_11",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        11,
+        11
+      ],
+      "white_tower_order": 16,
+      "neighbors": [
+        "wt_11_10_crown_ste",
+        "wt_12_11"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_12_11",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        12,
+        11
+      ],
+      "white_tower_order": 17,
+      "neighbors": [
+        "wt_11_11",
+        "wt_13_11_rack_sender"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_13_11_rack_sender",
+      "label": "Rack Sender",
+      "region": "white_tower",
+      "kind": "rack_sender",
+      "coords": [
+        13,
+        11
+      ],
+      "white_tower_order": 18,
+      "neighbors": [
+        "wt_12_11",
+        "wt_14_11",
+        "iw_13_13",
+        "iw_rack"
+      ],
+      "immune_to_forced_moves": true,
+      "_note": "Landing here sends player to the Rack (iw_rack). Reusable built-in rope connects to iw_13_13 (see traversal_edges)."
+    },
+    {
+      "id": "wt_14_11",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        14,
+        11
+      ],
+      "white_tower_order": 19,
+      "neighbors": [
+        "wt_13_11_rack_sender",
+        "wt_14_10"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_14_10",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        14,
+        10
+      ],
+      "white_tower_order": 20,
+      "neighbors": [
+        "wt_14_11",
+        "wt_14_9"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_14_9",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        14,
+        9
+      ],
+      "white_tower_order": 21,
+      "neighbors": [
+        "wt_14_10",
+        "wt_14_8"
+      ],
+      "immune_to_forced_moves": true
+    },
+    {
+      "id": "wt_14_8",
+      "label": "",
+      "region": "white_tower",
+      "kind": "normal",
+      "coords": [
+        14,
+        8
+      ],
+      "white_tower_order": 22,
+      "neighbors": [
+        "wt_14_9",
+        "wt_chapel_st_john"
+      ],
+      "immune_to_forced_moves": true,
+      "_note": "Exit of the White Tower path; also adjacent to Chapel of St John."
+    },
+    {
+      "id": "wt_chapel_st_john",
+      "label": "Chapel of St John",
+      "region": "white_tower",
+      "kind": "chapel_st_john",
+      "coords_region": [
+        [
+          13,
+          5
+        ],
+        [
+          15,
+          7
+        ]
+      ],
+      "neighbors": [
+        "wt_14_8",
+        "iw_14_4",
+        "iw_16_4"
+      ],
+      "immune_to_forced_moves": true,
+      "_note": "Reachable from wt_14_8 (exit of White Tower path) and from iw_16_4 via built-in ladder (not discarded). Note: iw_14_4 sits inside the White Tower envelope and is not a walkable iw cell \u2014 see open question about whether the chapel has a second ground-level entrance."
+    },
+    {
+      "_section": "OUTSIDE SOUTH EXTERIOR \u2014 under the wall walk, connecting start area to Lanthorn post via Cradle Tower escape"
+    },
+    {
+      "id": "out_8_m3",
+      "label": "",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        8,
+        -3
+      ],
+      "neighbors": [],
+      "_note": "Slide (9,-3)-(11,-3) between here and out_12_m3_extra_turn."
+    },
+    {
+      "id": "out_12_m3_extra_turn",
+      "label": "Extra turn",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        12,
+        -3
+      ],
+      "neighbors": [
+        "out_13_m3"
+      ],
+      "action": {
+        "key": "extra_turn",
+        "params": {
+          "resets_consecutive_doubles": true
+        }
+      }
+    },
+    {
+      "id": "out_13_m3",
+      "label": "",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        13,
+        -3
+      ],
+      "non_raven": true,
+      "neighbors": [
+        "out_14_m3",
+        "out_12_m3_extra_turn"
+      ]
+    },
+    {
+      "id": "out_14_m3",
+      "label": "",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        14,
+        -3
+      ],
+      "non_raven": true,
+      "neighbors": [
+        "out_15_m3",
+        "out_13_m3"
+      ]
+    },
+    {
+      "id": "out_15_m3",
+      "label": "",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        15,
+        -3
+      ],
+      "neighbors": [
+        "out_16_m3",
+        "out_14_m3"
+      ]
+    },
+    {
+      "id": "out_16_m3",
+      "label": "",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        16,
+        -3
+      ],
+      "non_raven": true,
+      "neighbors": [
+        "out_17_m3",
+        "out_15_m3"
+      ]
+    },
+    {
+      "id": "out_17_m3",
+      "label": "",
+      "region": "exterior_south",
+      "kind": "normal",
+      "coords": [
+        17,
+        -3
+      ],
+      "non_raven": true,
+      "neighbors": [
+        "out_18_m3_cradle_escape",
+        "out_16_m3"
+      ]
+    },
+    {
+      "id": "out_18_m3_cradle_escape",
+      "label": "Cradle Tower (exit)",
+      "region": "exterior_south",
+      "kind": "escape",
+      "coords": [
+        18,
+        -3
+      ],
+      "neighbors": [
+        "out_17_m3"
+      ],
+      "_note": "Escape point. Player banks a jewel, returns their coin, and redraws their hand (old cards reshuffled into the tower deck). In fast mode: game ends on first escape with 1+ jewel and coin. Slide (18,-2)-(18,1) between here and out_18_2."
+    },
+    {
+      "id": "iw_1_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        1,
+        8
+      ],
+      "neighbors": [
+        "iw_2_8",
+        "ww63"
+      ]
+    },
+    {
+      "id": "iw_2_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        3
+      ],
+      "neighbors": [
+        "iw_3_3",
+        "iw_2_4"
+      ]
+    },
+    {
+      "id": "iw_2_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        4
+      ],
+      "neighbors": [
+        "iw_2_5",
+        "iw_2_3"
+      ]
+    },
+    {
+      "id": "iw_2_5",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        2,
+        5
+      ],
+      "neighbors": [
+        "iw_2_6",
+        "iw_2_4"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_2_6",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        6
+      ],
+      "neighbors": [
+        "iw_2_7",
+        "iw_2_5"
+      ]
+    },
+    {
+      "id": "iw_2_7",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        7
+      ],
+      "neighbors": [
+        "iw_2_8",
+        "iw_2_6"
+      ]
+    },
+    {
+      "id": "iw_2_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        8
+      ],
+      "neighbors": [
+        "iw_3_8",
+        "iw_1_8",
+        "iw_2_9",
+        "iw_2_7"
+      ]
+    },
+    {
+      "id": "iw_2_9",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        9
+      ],
+      "neighbors": [
+        "iw_2_10",
+        "iw_2_8"
+      ]
+    },
+    {
+      "id": "iw_2_10",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        10
+      ],
+      "neighbors": [
+        "iw_2_11",
+        "iw_2_9"
+      ]
+    },
+    {
+      "id": "iw_2_11",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        11
+      ],
+      "neighbors": [
+        "iw_2_12",
+        "iw_2_10"
+      ]
+    },
+    {
+      "id": "iw_2_12",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        2,
+        12
+      ],
+      "neighbors": [
+        "iw_2_13",
+        "iw_2_11"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_2_13",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        13
+      ],
+      "neighbors": [
+        "iw_2_12",
+        "post_chapel"
+      ]
+    },
+    {
+      "id": "iw_2_15",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        15
+      ],
+      "neighbors": [
+        "iw_2_16",
+        "post_chapel"
+      ]
+    },
+    {
+      "id": "iw_2_16",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        16
+      ],
+      "neighbors": [
+        "iw_2_17",
+        "iw_2_15",
+        "iw_chapel_royal"
+      ]
+    },
+    {
+      "id": "iw_2_17",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        2,
+        17
+      ],
+      "neighbors": [
+        "iw_2_18",
+        "iw_2_16"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_2_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        2,
+        18
+      ],
+      "neighbors": [
+        "iw_2_17",
+        "ww56_devereux"
+      ]
+    },
+    {
+      "id": "iw_3_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        3,
+        3
+      ],
+      "neighbors": [
+        "iw_4_3",
+        "iw_2_3"
+      ]
+    },
+    {
+      "id": "iw_3_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        3,
+        8
+      ],
+      "neighbors": [
+        "iw_4_8",
+        "iw_2_8"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_3_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        3,
+        14
+      ],
+      "neighbors": [
+        "iw_4_14"
+      ]
+    },
+    {
+      "id": "iw_4_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        4,
+        3
+      ],
+      "neighbors": [
+        "iw_5_3",
+        "iw_3_3"
+      ]
+    },
+    {
+      "id": "iw_4_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        4,
+        8
+      ],
+      "neighbors": [
+        "iw_5_8",
+        "iw_3_8"
+      ]
+    },
+    {
+      "id": "iw_4_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        4,
+        14
+      ],
+      "neighbors": [
+        "iw_5_14",
+        "iw_3_14"
+      ]
+    },
+    {
+      "id": "iw_5_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        5,
+        3
+      ],
+      "neighbors": [
+        "iw_6_3",
+        "iw_4_3",
+        "ww77_queens_house"
+      ]
+    },
+    {
+      "id": "iw_5_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        5,
+        8
+      ],
+      "neighbors": [
+        "iw_6_8",
+        "iw_4_8"
+      ]
+    },
+    {
+      "id": "iw_5_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        5,
+        14
+      ],
+      "neighbors": [
+        "iw_6_14",
+        "iw_4_14"
+      ]
+    },
+    {
+      "id": "iw_6_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        6,
+        3
+      ],
+      "neighbors": [
+        "iw_7_3",
+        "iw_5_3"
+      ]
+    },
+    {
+      "id": "iw_6_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        6,
+        8
+      ],
+      "neighbors": [
+        "iw_7_8",
+        "iw_5_8"
+      ]
+    },
+    {
+      "id": "iw_6_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        6,
+        14
+      ],
+      "neighbors": [
+        "iw_7_14",
+        "iw_5_14"
+      ]
+    },
+    {
+      "id": "iw_7_2",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        2
+      ],
+      "neighbors": [
+        "iw_7_3"
+      ]
+    },
+    {
+      "id": "iw_7_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        7,
+        3
+      ],
+      "neighbors": [
+        "iw_8_3",
+        "iw_6_3",
+        "iw_7_4",
+        "iw_7_2"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_7_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        4
+      ],
+      "neighbors": [
+        "iw_8_4",
+        "iw_7_5",
+        "iw_7_3"
+      ]
+    },
+    {
+      "id": "iw_7_5",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        5
+      ],
+      "neighbors": [
+        "iw_8_5",
+        "iw_7_6",
+        "iw_7_4"
+      ]
+    },
+    {
+      "id": "iw_7_6",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        6
+      ],
+      "neighbors": [
+        "iw_8_6",
+        "iw_7_7",
+        "iw_7_5"
+      ]
+    },
+    {
+      "id": "iw_7_7",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        7
+      ],
+      "neighbors": [
+        "iw_8_7",
+        "iw_7_8",
+        "iw_7_6"
+      ]
+    },
+    {
+      "id": "iw_7_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        8
+      ],
+      "neighbors": [
+        "iw_8_8",
+        "iw_6_8",
+        "iw_7_9",
+        "iw_7_7"
+      ]
+    },
+    {
+      "id": "iw_7_9",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        9
+      ],
+      "neighbors": [
+        "iw_8_9",
+        "iw_7_8",
+        "post_scaffold"
+      ]
+    },
+    {
+      "id": "iw_7_11",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        11
+      ],
+      "neighbors": [
+        "iw_8_11",
+        "iw_7_12",
+        "post_scaffold"
+      ]
+    },
+    {
+      "id": "iw_7_12",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        7,
+        12
+      ],
+      "neighbors": [
+        "iw_8_12",
+        "iw_7_13",
+        "iw_7_11"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_7_13",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        7,
+        13
+      ],
+      "neighbors": [
+        "iw_8_13",
+        "iw_7_14",
+        "iw_7_12"
+      ]
+    },
+    {
+      "id": "iw_7_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        7,
+        14
+      ],
+      "neighbors": [
+        "iw_8_14",
+        "iw_6_14",
+        "iw_7_13"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_8_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        3
+      ],
+      "neighbors": [
+        "iw_7_3",
+        "iw_8_4"
+      ]
+    },
+    {
+      "id": "iw_8_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        4
+      ],
+      "neighbors": [
+        "iw_7_4",
+        "iw_8_5",
+        "iw_8_3"
+      ]
+    },
+    {
+      "id": "iw_8_5",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        5
+      ],
+      "neighbors": [
+        "iw_7_5",
+        "iw_8_6",
+        "iw_8_4"
+      ]
+    },
+    {
+      "id": "iw_8_6",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        6
+      ],
+      "neighbors": [
+        "iw_7_6",
+        "iw_8_7",
+        "iw_8_5"
+      ]
+    },
+    {
+      "id": "iw_8_7",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        7
+      ],
+      "neighbors": [
+        "iw_7_7",
+        "iw_8_8",
+        "iw_8_6"
+      ]
+    },
+    {
+      "id": "iw_8_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        8
+      ],
+      "neighbors": [
+        "iw_7_8",
+        "iw_8_9",
+        "iw_8_7"
+      ]
+    },
+    {
+      "id": "iw_8_9",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        9
+      ],
+      "neighbors": [
+        "iw_7_9",
+        "iw_8_8",
+        "post_scaffold"
+      ]
+    },
+    {
+      "id": "iw_8_11",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        8,
+        11
+      ],
+      "neighbors": [
+        "iw_7_11",
+        "iw_8_12",
+        "post_scaffold"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_8_12",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        12
+      ],
+      "neighbors": [
+        "iw_7_12",
+        "iw_8_13",
+        "iw_8_11"
+      ]
+    },
+    {
+      "id": "iw_8_13",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        13
+      ],
+      "neighbors": [
+        "iw_7_13",
+        "iw_8_14",
+        "iw_8_12"
+      ]
+    },
+    {
+      "id": "iw_8_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        14
+      ],
+      "neighbors": [
+        "iw_9_14",
+        "iw_7_14",
+        "iw_8_15",
+        "iw_8_13"
+      ]
+    },
+    {
+      "id": "iw_8_15",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        15
+      ],
+      "neighbors": [
+        "iw_8_16",
+        "iw_8_14"
+      ]
+    },
+    {
+      "id": "iw_8_16",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        16
+      ],
+      "neighbors": [
+        "iw_8_17",
+        "iw_8_15"
+      ]
+    },
+    {
+      "id": "iw_8_17",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        17
+      ],
+      "neighbors": [
+        "iw_8_18",
+        "iw_8_16"
+      ]
+    },
+    {
+      "id": "iw_8_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        8,
+        18
+      ],
+      "neighbors": [
+        "iw_9_18",
+        "iw_8_17",
+        "ww50"
+      ]
+    },
+    {
+      "id": "iw_9_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        9,
+        14
+      ],
+      "neighbors": [
+        "iw_10_14",
+        "iw_8_14"
+      ]
+    },
+    {
+      "id": "iw_9_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        9,
+        18
+      ],
+      "neighbors": [
+        "iw_10_18",
+        "iw_8_18"
+      ]
+    },
+    {
+      "id": "iw_10_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        10,
+        14
+      ],
+      "neighbors": [
+        "iw_11_14",
+        "iw_9_14",
+        "iw_bench_10_13"
+      ]
+    },
+    {
+      "id": "iw_10_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        10,
+        18
+      ],
+      "neighbors": [
+        "iw_11_18",
+        "iw_9_18"
+      ]
+    },
+    {
+      "id": "iw_11_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        11,
+        14
+      ],
+      "neighbors": [
+        "iw_10_14",
+        "post_waterloo"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_11_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        11,
+        18
+      ],
+      "neighbors": [
+        "iw_12_18",
+        "iw_10_18"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_12_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        12,
+        18
+      ],
+      "neighbors": [
+        "iw_13_18",
+        "iw_11_18"
+      ]
+    },
+    {
+      "id": "iw_13_1",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        13,
+        1
+      ],
+      "neighbors": [
+        "iw_13_2"
+      ]
+    },
+    {
+      "id": "iw_13_2",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        13,
+        2
+      ],
+      "neighbors": [
+        "iw_14_2",
+        "iw_13_1"
+      ]
+    },
+    {
+      "id": "iw_13_13",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        13,
+        13
+      ],
+      "neighbors": [
+        "iw_13_14",
+        "wt_13_11_rack_sender",
+        "post_waterloo"
+      ]
+    },
+    {
+      "id": "iw_13_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        13,
+        14
+      ],
+      "neighbors": [
+        "iw_14_14",
+        "iw_13_13",
+        "post_waterloo"
+      ]
+    },
+    {
+      "id": "iw_13_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        13,
+        18
+      ],
+      "neighbors": [
+        "iw_14_18",
+        "iw_12_18"
+      ]
+    },
+    {
+      "id": "iw_14_2",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        14,
+        2
+      ],
+      "neighbors": [
+        "iw_15_2",
+        "iw_13_2",
+        "iw_14_3"
+      ]
+    },
+    {
+      "id": "iw_14_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        14,
+        3
+      ],
+      "neighbors": [
+        "iw_15_3",
+        "iw_14_4",
+        "iw_14_2"
+      ]
+    },
+    {
+      "id": "iw_14_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        14,
+        4
+      ],
+      "neighbors": [
+        "iw_15_4",
+        "iw_14_3",
+        "wt_chapel_st_john"
+      ]
+    },
+    {
+      "id": "iw_14_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        14,
+        14
+      ],
+      "neighbors": [
+        "iw_15_14",
+        "iw_13_14"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_14_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        14,
+        18
+      ],
+      "neighbors": [
+        "iw_15_18",
+        "iw_13_18"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_15_2",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        15,
+        2
+      ],
+      "neighbors": [
+        "iw_14_2",
+        "iw_15_3",
+        "post_lanthorn"
+      ]
+    },
+    {
+      "id": "iw_15_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        15,
+        3
+      ],
+      "neighbors": [
+        "iw_16_3",
+        "iw_14_3",
+        "iw_15_4",
+        "iw_15_2"
+      ]
+    },
+    {
+      "id": "iw_15_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        15,
+        4
+      ],
+      "neighbors": [
+        "iw_16_4",
+        "iw_14_4",
+        "iw_15_3"
+      ]
+    },
+    {
+      "id": "iw_15_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        15,
+        14
+      ],
+      "neighbors": [
+        "iw_16_14",
+        "iw_14_14"
+      ]
+    },
+    {
+      "id": "iw_15_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        15,
+        18
+      ],
+      "neighbors": [
+        "iw_16_18",
+        "iw_14_18"
+      ]
+    },
+    {
+      "id": "iw_16_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        16,
+        3
+      ],
+      "neighbors": [
+        "iw_17_3",
+        "iw_15_3",
+        "iw_16_4",
+        "post_lanthorn"
+      ]
+    },
+    {
+      "id": "iw_16_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        16,
+        4
+      ],
+      "neighbors": [
+        "iw_17_4",
+        "iw_15_4",
+        "iw_16_3",
+        "wt_chapel_st_john"
+      ]
+    },
+    {
+      "id": "iw_16_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        16,
+        14
+      ],
+      "neighbors": [
+        "iw_17_14",
+        "iw_15_14"
+      ]
+    },
+    {
+      "id": "iw_16_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        16,
+        18
+      ],
+      "neighbors": [
+        "iw_17_18",
+        "iw_15_18"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_17_3",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        3
+      ],
+      "neighbors": [
+        "iw_16_3",
+        "iw_17_4",
+        "post_lanthorn"
+      ]
+    },
+    {
+      "id": "iw_17_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        17,
+        4
+      ],
+      "neighbors": [
+        "iw_18_4",
+        "iw_16_4",
+        "iw_17_5",
+        "iw_17_3"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_17_5",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        5
+      ],
+      "neighbors": [
+        "iw_17_6",
+        "iw_17_4"
+      ]
+    },
+    {
+      "id": "iw_17_6",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        6
+      ],
+      "neighbors": [
+        "iw_17_7",
+        "iw_17_5"
+      ]
+    },
+    {
+      "id": "iw_17_7",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        17,
+        7
+      ],
+      "neighbors": [
+        "iw_17_8",
+        "iw_17_6"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_17_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        8
+      ],
+      "neighbors": [
+        "iw_18_8",
+        "iw_17_9",
+        "iw_17_7"
+      ]
+    },
+    {
+      "id": "iw_17_9",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        9
+      ],
+      "neighbors": [
+        "iw_17_10",
+        "iw_17_8",
+        "iw_bench_16_9"
+      ]
+    },
+    {
+      "id": "iw_17_10",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        10
+      ],
+      "neighbors": [
+        "iw_18_10",
+        "iw_17_11",
+        "iw_17_9"
+      ]
+    },
+    {
+      "id": "iw_17_11",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        11
+      ],
+      "neighbors": [
+        "iw_17_12",
+        "iw_17_10"
+      ]
+    },
+    {
+      "id": "iw_17_12",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        12
+      ],
+      "neighbors": [
+        "iw_18_12",
+        "iw_17_13",
+        "iw_17_11"
+      ]
+    },
+    {
+      "id": "iw_17_13",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        17,
+        13
+      ],
+      "neighbors": [
+        "iw_17_14",
+        "iw_17_12"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_17_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        14
+      ],
+      "neighbors": [
+        "iw_18_14",
+        "iw_16_14",
+        "iw_17_13"
+      ]
+    },
+    {
+      "id": "iw_17_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        17,
+        18
+      ],
+      "neighbors": [
+        "iw_18_18",
+        "iw_16_18"
+      ]
+    },
+    {
+      "id": "iw_18_2",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        18,
+        2
+      ],
+      "neighbors": [
+        "post_lanthorn"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_18_4",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        18,
+        4
+      ],
+      "neighbors": [
+        "iw_17_4",
+        "iw_royal_armouries"
+      ]
+    },
+    {
+      "id": "iw_18_8",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        18,
+        8
+      ],
+      "neighbors": [
+        "iw_17_8",
+        "iw_hospital"
+      ]
+    },
+    {
+      "id": "iw_18_10",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        18,
+        10
+      ],
+      "neighbors": [
+        "iw_19_10",
+        "iw_17_10"
+      ]
+    },
+    {
+      "id": "iw_18_12",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        18,
+        12
+      ],
+      "neighbors": [
+        "iw_17_12",
+        "iw_museum"
+      ]
+    },
+    {
+      "id": "iw_18_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        18,
+        14
+      ],
+      "neighbors": [
+        "iw_19_14",
+        "iw_17_14"
+      ]
+    },
+    {
+      "id": "iw_18_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        18,
+        18
+      ],
+      "neighbors": [
+        "iw_19_18",
+        "iw_17_18"
+      ]
+    },
+    {
+      "id": "iw_19_10",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        19,
+        10
+      ],
+      "neighbors": [
+        "iw_20_10",
+        "iw_18_10"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_19_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        19,
+        14
+      ],
+      "neighbors": [
+        "iw_20_14",
+        "iw_18_14"
+      ]
+    },
+    {
+      "id": "iw_19_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        19,
+        18
+      ],
+      "neighbors": [
+        "iw_20_18",
+        "iw_18_18"
+      ]
+    },
+    {
+      "id": "iw_20_10",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        20,
+        10
+      ],
+      "neighbors": [
+        "iw_19_10",
+        "ww32"
+      ]
+    },
+    {
+      "id": "iw_20_14",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        20,
+        14
+      ],
+      "neighbors": [
+        "iw_19_14",
+        "iw_20_15"
+      ]
+    },
+    {
+      "id": "iw_20_15",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        20,
+        15
+      ],
+      "neighbors": [
+        "iw_20_16",
+        "iw_20_14"
+      ]
+    },
+    {
+      "id": "iw_20_16",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "normal",
+      "coords": [
+        20,
+        16
+      ],
+      "neighbors": [
+        "iw_20_17",
+        "iw_20_15"
+      ],
+      "non_raven": true
+    },
+    {
+      "id": "iw_20_17",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        20,
+        17
+      ],
+      "neighbors": [
+        "iw_20_18",
+        "iw_20_16"
+      ]
+    },
+    {
+      "id": "iw_20_18",
+      "label": "",
+      "region": "inner_ward",
+      "kind": "raven_trigger",
+      "coords": [
+        20,
+        18
+      ],
+      "neighbors": [
+        "iw_19_18",
+        "iw_20_17",
+        "ww39_martin"
+      ]
+    }
+  ],
+  "slides": [
+    {
+      "id": "slide_south_west",
+      "from_space": "iw_7_2",
+      "to_space": "out_8_m3",
+      "path_coords": [
+        [
+          7,
+          1
+        ],
+        [
+          7,
+          0
+        ],
+        [
+          7,
+          -1
+        ],
+        [
+          7,
+          -2
+        ],
+        [
+          7,
+          -3
+        ]
+      ],
+      "bidirectional": true
+    },
+    {
+      "id": "slide_south_middle",
+      "from_space": "out_8_m3",
+      "to_space": "out_12_m3_extra_turn",
+      "path_coords": [
+        [
+          9,
+          -3
+        ],
+        [
+          10,
+          -3
+        ],
+        [
+          11,
+          -3
+        ]
+      ],
+      "bidirectional": true
+    },
+    {
+      "id": "slide_south_east",
+      "from_space": "out_18_m3_cradle_escape",
+      "to_space": "iw_18_2",
+      "path_coords": [
+        [
+          18,
+          -2
+        ],
+        [
+          18,
+          -1
+        ],
+        [
+          18,
+          0
+        ],
+        [
+          18,
+          1
+        ]
+      ],
+      "bidirectional": true
+    }
+  ],
+  "warder_posts": [
+    {
+      "id": "scaffold",
+      "space_id": "post_scaffold",
+      "blocks_space_ids": []
+    },
+    {
+      "id": "chapel",
+      "space_id": "post_chapel",
+      "blocks_space_ids": []
+    },
+    {
+      "id": "waterloo",
+      "space_id": "post_waterloo",
+      "blocks_space_ids": []
+    },
+    {
+      "id": "lanthorn",
+      "space_id": "post_lanthorn",
+      "blocks_space_ids": []
+    }
+  ],
+  "initial_warders": [
+    {
+      "id": "warder_1",
+      "location": "post_scaffold"
+    },
+    {
+      "id": "warder_2",
+      "location": "post_chapel"
+    },
+    {
+      "id": "warder_3",
+      "location": "post_waterloo"
+    },
+    {
+      "id": "warder_4",
+      "location": "post_lanthorn"
+    }
+  ],
+  "display_regions": [
+    {
+      "id": "raven_deck",
+      "label": "Raven Cards",
+      "coords_region": [
+        [
+          3,
+          9
+        ],
+        [
+          6,
+          13
+        ]
+      ],
+      "purpose": "Pile + last-drawn-card display. Not a playable space."
+    }
+  ],
+  "traversal_edges": [
+    {
+      "id": "rope_wt_13_11_to_iw_13_13",
+      "from_space": "wt_13_11_rack_sender",
+      "to_space": "iw_13_13",
+      "item": "rope",
+      "consumes_card": false,
+      "built_in": false,
+      "direction": "bidirectional",
+      "requires_card": "rope",
+      "notes": "Two-way, reusable. Entering the tower this way still obeys forward-only."
+    },
+    {
+      "id": "ladder_iw_16_4_to_chapel_st_john",
+      "from_space": "iw_16_4",
+      "to_space": "wt_chapel_st_john",
+      "item": "ladder",
+      "consumes_card": false,
+      "built_in": false,
+      "direction": "bidirectional",
+      "requires_card": "ladder",
+      "notes": "Two-way, reusable. Entering the chapel still obeys forward-only."
+    },
+    {
+      "id": "secret_passage_chapel_royal_to_salt",
+      "from_space": "iw_chapel_royal",
+      "to_space": "ww23_salt",
+      "item": "secret_passage",
+      "consumes_card": false,
+      "built_in": true,
+      "direction": "bidirectional",
+      "description": "secret passage",
+      "movement_cost": 1,
+      "notes": "Bidirectional. Counts as one step of movement."
+    }
+  ],
+  "initial_jewel_locations": {
+    "sword": "wt_11_6_sword",
+    "sceptre": "wt_11_7_sceptre",
+    "orb": "wt_11_8_orb",
+    "crown_prince_of_wales": "wt_11_9_crown_pow",
+    "crown_st_edward": "wt_11_10_crown_ste"
+  },
+  "jewel_display_offset": {
+    "x": 1,
+    "y": 0,
+    "_note": "Jewels are rendered one square to the right of their pink space."
+  },
+  "start_space": "ww00_start",
+  "queens_house_space": "ww77_queens_house",
+  "escape_space": "out_18_m3_cradle_escape",
+  "devereux_space": "ww56_devereux",
+  "rack_space": "iw_rack",
+  "bloody_tower_space": "iw_bloody_tower",
+  "beauchamp_tower_space": "ww62_beauchamp",
+  "bowyer_tower_space": "ww47_bowyer",
+  "chapel_royal_space": "iw_chapel_royal",
+  "chapel_st_john_space": "wt_chapel_st_john",
+  "hospital_space": "iw_hospital",
+  "museum_space": "iw_museum",
+  "royal_armouries_space": "iw_royal_armouries",
+  "shop_space": "iw_shop",
+  "barracks_space": "barracks",
+  "raven_deck_space": null,
+  "raven_deck_display_region_id": "raven_deck",
+  "metallicity_destination_ids": [
+    "ww56_devereux",
+    "ww39_martin",
+    "ww23_salt",
+    "ww71_bell",
+    "ww14_wakefield",
+    "ww00_start"
+  ],
+  "bench_space_ids": [
+    "iw_bench_10_13",
+    "iw_bench_16_9"
+  ],
+  "rules": {
+    "white_tower_forward_only": true,
+    "white_tower_immune_to_forced_moves": true,
+    "escape_banks_jewel_returns_coin_redraws_hand": true,
+    "escape_reshuffles_old_hand_into_deck": true,
+    "wall_walk_is_closed_loop": false,
+    "tower_card_draw_kinds": [
+      "tower",
+      "devereux",
+      "museum"
+    ],
+    "tower_card_draw_exception_space_ids": [
+      "ww29_broad_arrow"
+    ],
+    "beauchamp_tower_confinement_only_from_raven_card": true,
+    "devereux_grants_coin": true,
+    "extra_turn_resets_consecutive_doubles": true,
+    "go_back_uses_landing_roll": true,
+    "swap_card_defender_random": true,
+    "change_card_draws_top_of_tower_deck": true,
+    "qh_accredit_ends_turn_on_landing": true,
+    "warders_start_in_posts": true,
+    "secret_passage_movement_cost": 1,
+    "exterior_south_forward_only": false,
+    "no_revisit_during_turn": true
+  },
+  "_answered_questions_note": "All initial open questions have been resolved with the user. See the `rules` block for mechanic clarifications; per-space action params (e.g. resets_consecutive_doubles, uses_landing_roll, ends_turn_on_landing) encode the rest."
+}
