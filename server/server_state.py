@@ -36,7 +36,7 @@ TOWER_CARDS_FILE = DATA_DIR / "tower_cards.json"
 RAVEN_CARDS_FILE = DATA_DIR / "raven_cards.json"
 
 
-PLAYER_COLORS = ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#e67e22"]
+PLAYER_COLORS = ["#e74c3c", "#3498db", "#0f571f", "#e9e8e2", "#121213", "#ebe71c"]
 
 
 class LobbyPlayer(BaseModel):
