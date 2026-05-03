@@ -1,7 +1,14 @@
 """Auto-save/load for the live game state.
 
-At this skeleton stage, the "state" is just the lobby and player list, stored as a
-generic dict. Phase 2+ will attach the real GameState.
+The full ``AppState`` snapshot (lobby + ``GameState`` + RNG internal state) is
+serialised to a single JSON file in ``saves/``. On startup
+:func:`server.server_state.build_app_state` calls :func:`load_game` to restore
+an in-progress game; on shutdown (and after every intent) :func:`save_game`
+atomically replaces the file via a ``.tmp`` → rename so a crash mid-write
+never leaves a half-written save.
+
+A corrupt or unreadable file is renamed to ``.bak`` and the server starts
+fresh rather than refusing to boot.
 """
 from __future__ import annotations
 

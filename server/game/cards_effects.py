@@ -5,9 +5,10 @@ Each handler has the signature::
     handler(state, player, params, *, board, rng, **kwargs) -> (state, events)
 
 ``events`` is a list of ``LogEntry``-compatible dicts. Handlers mutate state
-in place and return it (Pydantic models are mutable); this is fine because
-the rule engine snapshots via ``model_copy(deep=True)`` when it wants
-immutability.
+in place and return it (Pydantic models are mutable). The rule engine does
+**not** deep-copy state around effect dispatch — handlers are expected to
+validate before mutating so that a raised :class:`EffectError` leaves the
+state consistent.
 
 Several raven effects can't be fully resolved without player input (e.g.
 ``go_to_location`` with ``player_choice``, ``call_warder_to_post`` with

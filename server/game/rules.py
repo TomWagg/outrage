@@ -1,13 +1,23 @@
 """Pure intent dispatch for the rule engine.
 
 Every externally-observable action (rolling dice, playing a card, etc.) is
-an ``Intent`` — a ``(name, payload)`` pair. ``apply`` validates the intent
+an ``Intent`` — a ``(name, payload)`` pair. :func:`apply` validates the intent
 against the current :class:`GameState` and either returns
 ``(new_state, events)`` or raises :class:`RuleError`.
 
-The rule engine is intentionally a pure function. The :class:`Engine` class
-in :mod:`server.game.engine` layers RNG management, persistence and auto-
-transitions on top.
+State is mutated **in place** and the same object is returned as ``new_state``.
+Handlers are written to validate before mutating, but a mid-handler exception
+will leave the state partially changed. The caller (:mod:`server.main`) only
+replaces ``AppState.game`` on success, so a :class:`RuleError` leaves the
+live game untouched.
+
+``events`` is a plain list of dicts ``{"kind": ..., "payload": {...}}``.
+:mod:`server.main` broadcasts these to all clients as individual ``Event``
+messages and then pushes a fresh per-player redacted snapshot.
+
+RNG access from auto-triggered paths (raven draws that fire during landing
+resolution) uses the module-level :data:`_GLOBAL_RNG` bridge rather than
+threading the :class:`~server.game.rng.Rng` through every call stack.
 """
 from __future__ import annotations
 

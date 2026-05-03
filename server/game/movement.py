@@ -1,18 +1,19 @@
 """Movement engine.
 
 The movement engine is a pure function of ``(board, from_space, steps,
-player, warder_blocks)`` — it does not mutate state. Its caller (the rule
-engine) decides whether to auto-resolve (single-path / forward-only) or ask
-the player for a decision via the ``CHOOSING_PATH`` phase.
+player, ...)`` — it does not mutate state. Its caller (the rule engine)
+decides whether to auto-resolve (single-path / forward-only) or ask the
+player for a decision via the ``CHOOSING_PATH`` phase.
 
-Wall-walk movement is forward-only along the cyclic wall-walk order until the
-player has been accredited. After accreditation, the wall walk behaves as an
-arbitrary graph just like the inner ward.
+Wall-walk movement is forward-only along the linear wall-walk sequence until
+the player has been accredited. The wall walk is a dead-end that terminates at
+Queen's House (``ww77_queens_house``); overshooting simply lands the player on
+the final space. After accreditation, the wall walk behaves as an arbitrary
+graph just like the inner ward.
 
-Warder blocking support (Phase 8) is represented by an opt-in
-``warder_blocking_spaces`` parameter — we treat those spaces as impassable
-unless the player intends to play a ``Disguise`` (which is handled in the
-rule layer, not here).
+Warder blocking is represented by an opt-in ``warder_blocking_spaces``
+parameter — those spaces are treated as impassable unless the player holds a
+``Disguise`` card (which is handled and consumed in the rule layer, not here).
 """
 from __future__ import annotations
 
