@@ -175,8 +175,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
       rx: "6",
       ry: "6",
       fill: "#2c3e50",
-      stroke: "#7f8c8d",
-      "stroke-dasharray": "4 3",
+      stroke: "#7f8c8d"
     }));
     const lbl = createSVG("text", {
       x: String(px + rw / 2),
@@ -221,7 +220,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     }
     // Label: render text inside any non-normal space that has a label.
     // foreignObject lets us use HTML flexbox for centering and word-wrap.
-    if (sp.label && sp.kind !== "normal") {
+    if (sp.label && sp.kind !== "normal" && sp.kind !== "jewel" && sp.kind !== "rack_sender") {
       const fo = createSVG("foreignObject", {
         x: String(rect.x),
         y: String(rect.y),
@@ -365,6 +364,19 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
           x2 = mx + ux; y2 = my + uy;
         }
 
+        // Ensure (x2, y2) is the endpoint toward B (nid), not just the
+        // "larger-y / larger-x" end produced by the axis-snapping above.
+        // Dot the line direction against the A→B vector; if it's negative,
+        // the endpoints are backwards — swap them.
+        const dotAB = (x2 - x1) * (cxB - cxA) + (y2 - y1) * (cyB - cyA);
+        if (dotAB < 0) {
+          [x1, x2] = [x2, x1];
+          [y1, y2] = [y2, y1];
+        }
+
+        // One-way if nid does NOT list sp as a neighbour.
+        const one_way = !(board.spaces.find((s) => s.id === nid)?.neighbors.includes(sp.id) ?? false);
+
         edgeLayer.appendChild(createSVG("line", {
           x1: String(x1), y1: String(y1),
           x2: String(x2), y2: String(y2),
@@ -372,6 +384,19 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
           "stroke-width": "1",
           "stroke-linecap": "round",
         }));
+
+        if (one_way) {
+          // Draw a small filled triangle at (x2, y2) pointing in the A→B direction.
+          // We build it pointing right (+x) then rotate into place.
+          // Note: Math.atan2 returns radians; SVG rotate() takes degrees.
+          const angleDeg = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+          const s = 5; // half-base of the arrowhead triangle
+          edgeLayer.appendChild(createSVG("path", {
+            d: `M ${x2 + s} ${y2} L ${x2} ${y2 - s / 2} L ${x2} ${y2 + s / 2} Z`,
+            fill: "rgba(0,0,0,0.45)",
+            transform: `rotate(${angleDeg} ${x2} ${y2})`,
+          }));
+        }
       }
     }
     svg.appendChild(edgeLayer);
