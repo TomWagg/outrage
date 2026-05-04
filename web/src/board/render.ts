@@ -180,7 +180,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     }));
     const lbl = createSVG("text", {
       x: String(px + rw / 2),
-      y: String(py + 12),
+      y: String(py + rh / 2),
       "text-anchor": "middle",
       "font-size": "10",
       fill: "#bdc3c7",
@@ -192,7 +192,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
 
   // --- spaces ---
   const spaceLayer = createSVG("g", { "data-layer": "spaces" });
-  const NO_CIRCLE_KINDS = new Set(["raven_trigger", "chapel_royal", "chapel_st_john", "museum", "royal_armouries", "hospital"]);
+  const NO_CIRCLE_KINDS = new Set(["raven_trigger", "chapel_royal", "chapel_st_john", "museum", "royal_armouries", "hospital", "warder_post", "bench", "rack", "bloody_tower"]);
   for (const sp of board.spaces) {
     const rect = spaceRect(sp, toPx);
     if (!rect) continue;
@@ -219,19 +219,34 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     } else if (opts.onSpaceClick) {
       el.addEventListener("click", () => opts.onSpaceClick!(sp.id));
     }
-    // Label very short text inside the rect if the space is large enough.
-    if (sp.label && rect.w >= CELL && rect.h >= CELL) {
-      const t = createSVG("text", {
-        x: String(rect.x + rect.w / 2),
-        y: String(rect.y + rect.h / 2 + 3),
-        "text-anchor": "middle",
-        "font-size": "8",
-        fill: "#111",
+    // Label: render text inside any non-normal space that has a label.
+    // foreignObject lets us use HTML flexbox for centering and word-wrap.
+    if (sp.label && sp.kind !== "normal") {
+      const fo = createSVG("foreignObject", {
+        x: String(rect.x),
+        y: String(rect.y),
+        width: String(rect.w),
+        height: String(rect.h),
         "pointer-events": "none",
       });
-      t.textContent = truncate(sp.label, 14);
+      // Use the HTML namespace so the browser treats the div as HTML inside SVG.
+      const div = document.createElementNS(
+        "http://www.w3.org/1999/xhtml", "div",
+      ) as HTMLElement;
+      // Flexbox on the div fills the foreignObject and centres the text.
+      // Tall-narrow spaces (warder posts, some wall-walk towers) get vertical
+      // writing so the label reads downward rather than wrapping into a sliver.
+      const vertical = rect.h > rect.w * 1.5;
+      div.style.cssText =
+        "width:100%;height:100%;display:flex;align-items:center;" +
+        "justify-content:center;text-align:center;font-size:8px;" +
+        "color:#111;line-height:1.2;word-break:break-word;" +
+        "overflow-wrap:break-word;padding:2px;box-sizing:border-box;" +
+        (vertical ? "writing-mode:vertical-lr;" : "");
+      div.textContent = sp.label;
+      fo.appendChild(div);
       spaceLayer.appendChild(el);
-      spaceLayer.appendChild(t);
+      spaceLayer.appendChild(fo);
     } else {
       spaceLayer.appendChild(el);
     }
@@ -295,7 +310,14 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     for (const sp of board.spaces) {
       const rA = rectMap.get(sp.id);
       if (!rA) continue;
+
       for (const nid of sp.neighbors) {
+        // avoid drawing an edge from chapel to salt tower (too far)
+        if ((sp.id === "iw_chapel_royal" && nid === "ww23_salt") ||
+            (nid === "iw_chapel_royal" && sp.id === "ww23_salt")) {
+          continue;
+        }
+
         const key = sp.id < nid ? `${sp.id}|${nid}` : `${nid}|${sp.id}`;
         if (drawn.has(key)) continue;
         drawn.add(key);
@@ -320,16 +342,16 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
           const ey_s = cyS < cyL ? rS.y + rS.h : rS.y;
           const ey_l = cyS < cyL ? rL.y          : rL.y + rL.h;
           const borderY = (ey_s + ey_l) / 2;
-          x1 = cxS; y1 = borderY - CELL / 4;
-          x2 = cxS; y2 = borderY + CELL / 4;
+          x1 = cxS; y1 = borderY - CELL / 8;
+          x2 = cxS; y2 = borderY + CELL / 8;
 
         } else if (cyS >= rL.y && cyS <= rL.y + rL.h) {
           // ---- horizontal line at y = cy_S ----
           const ex_s = cxS < cxL ? rS.x + rS.w : rS.x;
           const ex_l = cxS < cxL ? rL.x          : rL.x + rL.w;
           const borderX = (ex_s + ex_l) / 2;
-          x1 = borderX - CELL / 4; y1 = cyS;
-          x2 = borderX + CELL / 4; y2 = cyS;
+          x1 = borderX - CELL / 8; y1 = cyS;
+          x2 = borderX + CELL / 8; y2 = cyS;
 
         } else {
           // ---- diagonal fallback: centre-to-centre direction, CELL/2 long ----
@@ -516,9 +538,6 @@ function spaceRect(
   return { x: px + 1, y: py + 1, w: CELL - 2, h: CELL - 2 };
 }
 
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : s.slice(0, n - 1) + "…";
-}
 
 function jewelGlyph(id: string): string {
   switch (id) {
