@@ -908,7 +908,8 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         rng=rng,
     )
     _sync_deck(state, "tower", tower_deck)
-    evs = [_ev("combat_resolved", winner=combat.winner)]
+    loser = combat.defender if combat.winner == combat.attacker else combat.attacker
+    evs = [_ev("combat_resolved", winner=combat.winner, loser=loser)]
     state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs

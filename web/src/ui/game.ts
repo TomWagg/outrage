@@ -34,10 +34,6 @@ export function renderGameLayout(
           <h3>Decks &amp; jewels</h3>
           <div id="decks-info" style="font-size:0.85rem;color:var(--muted)"></div>
         </div>
-        <div id="stats-slot" class="panel">
-          <h3>Lifetime stats</h3>
-          <div id="stats-info" style="font-size:0.8rem;color:var(--muted)">Loading…</div>
-        </div>
         <div id="log-slot"></div>
         <div class="panel" id="chat-slot">
           <h3>Chat</h3>
@@ -56,23 +52,6 @@ export function renderGameLayout(
   const hand = renderHandPanel(root.querySelector<HTMLElement>("#hand-slot")!);
   const logPanel = renderLogPanel(root.querySelector<HTMLElement>("#log-slot")!);
   const combat = renderCombatModal(root.querySelector<HTMLElement>("#combat-modal-slot")!);
-
-  // Lifetime stats: fetched from ``/api/stats``. Re-fetch on game_over so
-  // end-of-game bumps are visible without refreshing the page. Cached in a
-  // closure so ``update()`` can re-render without re-fetching every frame.
-  let statsCache: Record<string, LifetimeStats> | null = null;
-  const refreshStats = async () => {
-    try {
-      const resp = await fetch("/api/stats");
-      const json = await resp.json();
-      statsCache = (json?.by_username ?? {}) as Record<string, LifetimeStats>;
-      renderStats(root, state, statsCache);
-    } catch {
-      renderStats(root, state, null);
-    }
-  };
-  void refreshStats();
-  let lastSeenGameOver = false;
 
   // Chat wiring.
   const chatInput = root.querySelector<HTMLInputElement>("#chat-input")!;
@@ -99,82 +78,8 @@ export function renderGameLayout(
       logPanel.update(state);
       updateChat(root, state);
       combat.update(state, ws);
-      renderStats(root, state, statsCache);
-      // Refresh stats on fresh game_over transitions.
-      const nowOver = state.game?.phase === "GAME_OVER";
-      if (nowOver && !lastSeenGameOver) void refreshStats();
-      lastSeenGameOver = nowOver;
     },
   };
-}
-
-interface LifetimeStats {
-  username: string;
-  games_played: number;
-  wins_fast: number;
-  wins_slow: number;
-  jewels_stolen: number;
-  coins_stolen: number;
-  combat_wins: number;
-  combat_losses: number;
-  racked_count: number;
-  imprisoned_count: number;
-}
-
-function renderStats(
-  root: HTMLElement,
-  state: ClientState,
-  cache: Record<string, LifetimeStats> | null,
-): void {
-  const el = root.querySelector<HTMLElement>("#stats-info");
-  if (!el) return;
-  if (cache === null) { el.textContent = "(unable to load)"; return; }
-  const g = state.game;
-  // Scope to players in the current game; if the lobby hasn't started, show
-  // the viewer's own row.
-  const names = g ? g.players.map((p) => p.username) : state.you ? [state.you] : [];
-  if (names.length === 0) { el.textContent = "—"; return; }
-  const rows = names
-    .map((n) => cache[n] ?? emptyStats(n))
-    .sort((a, b) => (b.wins_fast + b.wins_slow) - (a.wins_fast + a.wins_slow));
-  const tbl = [
-    `<table style="width:100%;border-collapse:collapse">`,
-    `<thead><tr style="color:var(--muted);text-align:left">` +
-      `<th>Player</th><th>Games</th><th>Wins</th><th>💎</th><th>⚔ W/L</th><th>Rack</th><th>Prison</th>` +
-      `</tr></thead>`,
-    `<tbody>`,
-    ...rows.map((s) => {
-      const wins = s.wins_fast + s.wins_slow;
-      const mine = s.username === state.you ? ` style="color:var(--accent)"` : "";
-      return (
-        `<tr${mine}>` +
-        `<td>${escapeHtml(s.username)}</td>` +
-        `<td>${s.games_played}</td>` +
-        `<td>${wins}${wins ? ` (F${s.wins_fast}/S${s.wins_slow})` : ""}</td>` +
-        `<td>${s.jewels_stolen}</td>` +
-        `<td>${s.combat_wins}/${s.combat_losses}</td>` +
-        `<td>${s.racked_count}</td>` +
-        `<td>${s.imprisoned_count}</td>` +
-        `</tr>`
-      );
-    }),
-    `</tbody></table>`,
-  ].join("");
-  el.innerHTML = tbl;
-}
-
-function emptyStats(username: string): LifetimeStats {
-  return {
-    username, games_played: 0, wins_fast: 0, wins_slow: 0,
-    jewels_stolen: 0, coins_stolen: 0, combat_wins: 0, combat_losses: 0,
-    racked_count: 0, imprisoned_count: 0,
-  };
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!),
-  );
 }
 
 function updateStatus(root: HTMLElement, state: ClientState): void {

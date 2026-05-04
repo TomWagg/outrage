@@ -1,4 +1,5 @@
 import type { WsClient } from "../net/ws.js";
+import { fetchAndRenderStats } from "./stats_table.js";
 
 export function renderLogin(
   root: HTMLElement,
@@ -14,6 +15,10 @@ export function renderLogin(
         <button id="join">Join</button>
       </div>
       <div class="error" id="error"></div>
+      <div class="panel" style="margin-top:1.5rem;max-width:700px">
+        <h3>Lifetime stats</h3>
+        <div id="login-stats-info" style="font-size:0.8rem;color:var(--muted)">Loading…</div>
+      </div>
     </div>
   `;
 
@@ -42,6 +47,9 @@ export function renderLogin(
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") submit();
   });
+
+  // Fetch and render lifetime stats (no username highlight yet — user hasn't joined).
+  void fetchAndRenderStats(root.querySelector<HTMLElement>("#login-stats-info")!);
 
   // Restore last-used name.
   const saved = localStorage.getItem("outrage:username");

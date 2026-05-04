@@ -65,6 +65,90 @@ WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
 
 # ============================================================================
+# Stats tracking
+# ============================================================================
+
+
+def _update_stats_from_events(state: AppState, events: list[dict]) -> None:
+    """Scan a batch of rule-engine events and increment per-player lifetime stats.
+
+    Called after every successful lobby ``start_game`` and every game intent so
+    that stats accumulate incrementally rather than being computed at game-end.
+    """
+    for ev in events:
+        kind = ev["kind"]
+        p = ev.get("payload", {})
+
+        if kind == "game_started":
+            # Increment games_played for every player in the starting order.
+            for username in p.get("order", []):
+                state.stats.get(username).games_played += 1
+
+        elif kind == "dice_rolled":
+            username = p.get("player")
+            if username:
+                s = state.stats.get(username)
+                roll = p.get("roll", [])
+                s.total_dice_rolls += sum(roll)
+                if len(roll) == 2 and roll[0] == roll[1]:
+                    s.doubles_rolled += 1
+
+        elif kind == "tower_card_drawn":
+            username = p.get("player")
+            if username:
+                state.stats.get(username).tower_cards_gained += 1
+
+        elif kind == "raven_card_drawn":
+            username = p.get("player")
+            if username:
+                state.stats.get(username).raven_cards_triggered += 1
+
+        elif kind == "jewel_acquired":
+            username = p.get("player")
+            if username:
+                state.stats.get(username).jewels_stolen += 1
+
+        elif kind == "coin_picked_up":
+            username = p.get("player")
+            if username:
+                state.stats.get(username).coins_stolen += 1
+
+        elif kind == "combat_resolved":
+            winner = p.get("winner")
+            loser = p.get("loser")
+            if winner:
+                state.stats.get(winner).combat_wins += 1
+            if loser:
+                state.stats.get(loser).combat_losses += 1
+
+        elif kind in ("fast_win", "slow_escaped"):
+            username = p.get("player")
+            if username:
+                state.stats.get(username).wins += 1
+
+        elif kind == "slow_game_over":
+            # slow_escaped handles individual escapes; slow_game_over fires for
+            # the last-remaining or jewels-exhausted ending — award the win to
+            # whoever the engine declared as winner.
+            winner = p.get("winner")
+            if winner and not any(
+                e["kind"] == "slow_escaped" and e.get("payload", {}).get("player") == winner
+                for e in events
+            ):
+                state.stats.get(winner).wins += 1
+
+        elif kind in ("rack_coin_lost", "rack_hand_lost", "firecrackers_racked"):
+            username = p.get("player")
+            if username:
+                state.stats.get(username).racked_count += 1
+
+        elif kind in ("three_doubles_bloody_tower", "beauchamp_imprisonment", "stopped_forfeit"):
+            username = p.get("player")
+            if username:
+                state.stats.get(username).imprisoned_count += 1
+
+
+# ============================================================================
 # Snapshot / broadcast helpers
 # ============================================================================
 
@@ -244,6 +328,7 @@ async def _handle_start_game(state: AppState, conn: Connection, payload: dict, r
         await send_to(conn, ErrorMsg(request_id=request_id, code="internal", message=str(exc)))
         return
 
+    _update_stats_from_events(state, events)
     state.persist()
     await send_to(conn, Ack(request_id=request_id, detail="game_started"))
     await _broadcast_events(state, events)
@@ -322,6 +407,7 @@ async def _handle_game_intent(
         return
 
     state.game = new_game
+    _update_stats_from_events(state, events)
     state.persist()
     await send_to(conn, Ack(request_id=request_id))
     await _broadcast_events(state, events)

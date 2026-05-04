@@ -23,14 +23,17 @@ export interface LobbyState {
 export interface PlayerStats {
   username: string;
   games_played: number;
-  wins_fast: number;
-  wins_slow: number;
+  wins: number;
   jewels_stolen: number;
   coins_stolen: number;
   combat_wins: number;
   combat_losses: number;
   racked_count: number;
   imprisoned_count: number;
+  tower_cards_gained: number;
+  raven_cards_triggered: number;
+  doubles_rolled: number;
+  total_dice_rolls: number;
 }
 
 // --- Game ------------------------------------------------------------------

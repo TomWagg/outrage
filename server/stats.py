@@ -11,14 +11,17 @@ from pydantic import BaseModel, Field
 class PlayerStats(BaseModel):
     username: str
     games_played: int = 0
-    wins_fast: int = 0
-    wins_slow: int = 0
+    wins: int = 0
     jewels_stolen: int = 0
     coins_stolen: int = 0
     combat_wins: int = 0
     combat_losses: int = 0
     racked_count: int = 0
     imprisoned_count: int = 0
+    tower_cards_gained: int = 0
+    raven_cards_triggered: int = 0
+    doubles_rolled: int = 0
+    total_dice_rolls: int = 0
 
 
 class StatsStore(BaseModel):

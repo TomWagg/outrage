@@ -1,5 +1,6 @@
 import type { WsClient } from "../net/ws.js";
 import type { ClientState } from "../state.js";
+import { type LifetimeStats, renderStatsTable, fetchAndRenderStats } from "./stats_table.js";
 
 export function renderLobbyLayout(root: HTMLElement, ws: WsClient, state: ClientState): {
   update: () => void;
@@ -37,8 +38,8 @@ export function renderLobbyLayout(root: HTMLElement, ws: WsClient, state: Client
           </div>
         </div>
         <div class="panel">
-          <h3>Stats</h3>
-          <div id="stats" style="font-size:0.9rem; color: var(--muted);"></div>
+          <h3>Lifetime stats</h3>
+          <div id="stats-info" style="font-size:0.8rem;color:var(--muted)">Loading…</div>
         </div>
         <div class="panel">
           <h3>Chat</h3>
@@ -51,6 +52,15 @@ export function renderLobbyLayout(root: HTMLElement, ws: WsClient, state: Client
       </div>
     </div>
   `;
+
+  // Lifetime stats: fetched from /api/stats once on mount, then available
+  // in-closure so update() can re-render without re-fetching on every frame.
+  let statsCache: Record<string, LifetimeStats> | null = null;
+  const statsEl = root.querySelector<HTMLElement>("#stats-info")!;
+  const refreshStats = async () => {
+    statsCache = await fetchAndRenderStats(statsEl, state.you);
+  };
+  void refreshStats();
 
   const modeSelect = root.querySelector<HTMLSelectElement>("#mode")!;
   modeSelect.addEventListener("change", () => {
@@ -82,7 +92,10 @@ export function renderLobbyLayout(root: HTMLElement, ws: WsClient, state: Client
   });
 
   return {
-    update: () => update(root, state),
+    update: () => {
+      update(root, state);
+      renderStatsTable(statsEl, statsCache, state.you);
+    },
   };
 }
 
@@ -138,21 +151,6 @@ function update(root: HTMLElement, state: ClientState): void {
     startBtn.title = n < 2 ? "Need at least 2 players" : "";
   }
 
-  // Stats panel
-  const statsEl = root.querySelector<HTMLElement>("#stats")!;
-  if (state.stats) {
-    const s = state.stats;
-    statsEl.innerHTML = `
-      <div>Games played: <strong>${s.games_played}</strong></div>
-      <div>Wins (fast / slow): <strong>${s.wins_fast} / ${s.wins_slow}</strong></div>
-      <div>Jewels stolen: <strong>${s.jewels_stolen}</strong></div>
-      <div>Combat W/L: <strong>${s.combat_wins} / ${s.combat_losses}</strong></div>
-      <div>Racked: <strong>${s.racked_count}</strong> &nbsp; Imprisoned: <strong>${s.imprisoned_count}</strong></div>
-    `;
-  } else {
-    statsEl.textContent = "—";
-  }
-
   // Chat
   const log = root.querySelector<HTMLElement>("#chat-log")!;
   log.innerHTML = "";
@@ -168,3 +166,4 @@ function update(root: HTMLElement, state: ClientState): void {
   }
   log.scrollTop = log.scrollHeight;
 }
+
