@@ -271,6 +271,90 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
   }
   svg.appendChild(spaceLayer);
 
+  // --- edges (neighbor connections) ---
+  // Draw a short line segment (CELL/2 long total, CELL/4 into each space)
+  // centred on the shared border between each pair of neighbouring spaces.
+  //
+  // To avoid diagonal lines wherever possible we snap to an axis when the
+  // smaller space's centre falls inside the larger space's extent:
+  //   - cx_S within L's x-range → VERTICAL line at x = cx_S
+  //   - cy_S within L's y-range → HORIZONTAL line at y = cy_S
+  //   - otherwise              → diagonal centre-to-centre fallback
+  {
+    const edgeLayer = createSVG("g", { "data-layer": "edges", "pointer-events": "none" });
+
+    // Pre-compute pixel rect for every space.
+    const rectMap = new Map<string, { x: number; y: number; w: number; h: number }>();
+    for (const sp of board.spaces) {
+      const r = spaceRect(sp, toPx);
+      if (r) rectMap.set(sp.id, r);
+    }
+
+    // Visit each undirected edge exactly once.
+    const drawn = new Set<string>();
+    for (const sp of board.spaces) {
+      const rA = rectMap.get(sp.id);
+      if (!rA) continue;
+      for (const nid of sp.neighbors) {
+        const key = sp.id < nid ? `${sp.id}|${nid}` : `${nid}|${sp.id}`;
+        if (drawn.has(key)) continue;
+        drawn.add(key);
+        const rB = rectMap.get(nid);
+        if (!rB) continue;
+
+        // Pixel centres.
+        const cxA = rA.x + rA.w / 2, cyA = rA.y + rA.h / 2;
+        const cxB = rB.x + rB.w / 2, cyB = rB.y + rB.h / 2;
+
+        // S = smaller space, L = larger (by pixel area; equal area → S=A, L=B).
+        const useA = rA.w * rA.h <= rB.w * rB.h;
+        const [rS, cxS, cyS, rL, cxL, cyL] = useA
+          ? [rA, cxA, cyA, rB, cxB, cyB]
+          : [rB, cxB, cyB, rA, cxA, cyA];
+
+        let x1: number, y1: number, x2: number, y2: number;
+
+        if (cxS >= rL.x && cxS <= rL.x + rL.w) {
+          // ---- vertical line at x = cx_S ----
+          // Find the y-edges on each rect that face the other space.
+          const ey_s = cyS < cyL ? rS.y + rS.h : rS.y;
+          const ey_l = cyS < cyL ? rL.y          : rL.y + rL.h;
+          const borderY = (ey_s + ey_l) / 2;
+          x1 = cxS; y1 = borderY - CELL / 4;
+          x2 = cxS; y2 = borderY + CELL / 4;
+
+        } else if (cyS >= rL.y && cyS <= rL.y + rL.h) {
+          // ---- horizontal line at y = cy_S ----
+          const ex_s = cxS < cxL ? rS.x + rS.w : rS.x;
+          const ex_l = cxS < cxL ? rL.x          : rL.x + rL.w;
+          const borderX = (ex_s + ex_l) / 2;
+          x1 = borderX - CELL / 4; y1 = cyS;
+          x2 = borderX + CELL / 4; y2 = cyS;
+
+        } else {
+          // ---- diagonal fallback: centre-to-centre direction, CELL/2 long ----
+          const dx = cxB - cxA, dy = cyB - cyA;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist === 0) continue;
+          const ux = (dx / dist) * (CELL / 8);
+          const uy = (dy / dist) * (CELL / 8);
+          const mx = (cxA + cxB) / 2, my = (cyA + cyB) / 2;
+          x1 = mx - ux; y1 = my - uy;
+          x2 = mx + ux; y2 = my + uy;
+        }
+
+        edgeLayer.appendChild(createSVG("line", {
+          x1: String(x1), y1: String(y1),
+          x2: String(x2), y2: String(y2),
+          stroke: "rgba(0,0,0,0.3)",
+          "stroke-width": "1",
+          "stroke-linecap": "round",
+        }));
+      }
+    }
+    svg.appendChild(edgeLayer);
+  }
+
   // --- jewels (at offset from their home space) ---
   if (game) {
     const jewelLayer = createSVG("g", { "data-layer": "jewels" });
