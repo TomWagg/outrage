@@ -1624,7 +1624,6 @@
       ],
       "white_tower_order": 1,
       "neighbors": [
-        "wt_12_2",
         "wt_10_2"
       ],
       "immune_to_forced_moves": true
@@ -1640,7 +1639,6 @@
       ],
       "white_tower_order": 2,
       "neighbors": [
-        "wt_11_2",
         "wt_10_3"
       ],
       "immune_to_forced_moves": true
@@ -1656,7 +1654,6 @@
       ],
       "white_tower_order": 3,
       "neighbors": [
-        "wt_10_2",
         "wt_11_3"
       ],
       "immune_to_forced_moves": true
@@ -1672,7 +1669,6 @@
       ],
       "white_tower_order": 4,
       "neighbors": [
-        "wt_10_3",
         "wt_12_3"
       ],
       "immune_to_forced_moves": true
@@ -1688,7 +1684,6 @@
       ],
       "white_tower_order": 5,
       "neighbors": [
-        "wt_11_3",
         "wt_13_3"
       ],
       "immune_to_forced_moves": true
@@ -1704,7 +1699,6 @@
       ],
       "white_tower_order": 6,
       "neighbors": [
-        "wt_12_3",
         "wt_13_4"
       ],
       "immune_to_forced_moves": true
@@ -1720,7 +1714,6 @@
       ],
       "white_tower_order": 7,
       "neighbors": [
-        "wt_13_3",
         "wt_12_4"
       ],
       "immune_to_forced_moves": true
@@ -1736,7 +1729,6 @@
       ],
       "white_tower_order": 8,
       "neighbors": [
-        "wt_13_4",
         "wt_11_4"
       ],
       "immune_to_forced_moves": true
@@ -1752,7 +1744,6 @@
       ],
       "white_tower_order": 9,
       "neighbors": [
-        "wt_12_4",
         "wt_11_5"
       ],
       "immune_to_forced_moves": true
@@ -1768,7 +1759,6 @@
       ],
       "white_tower_order": 10,
       "neighbors": [
-        "wt_11_4",
         "wt_11_6_sword"
       ],
       "immune_to_forced_moves": true
@@ -1785,7 +1775,6 @@
       ],
       "white_tower_order": 11,
       "neighbors": [
-        "wt_11_5",
         "wt_11_7_sceptre"
       ],
       "immune_to_forced_moves": true
@@ -1802,7 +1791,6 @@
       ],
       "white_tower_order": 12,
       "neighbors": [
-        "wt_11_6_sword",
         "wt_11_8_orb"
       ],
       "immune_to_forced_moves": true
@@ -1819,7 +1807,6 @@
       ],
       "white_tower_order": 13,
       "neighbors": [
-        "wt_11_7_sceptre",
         "wt_11_9_crown_pow"
       ],
       "immune_to_forced_moves": true
@@ -1836,7 +1823,6 @@
       ],
       "white_tower_order": 14,
       "neighbors": [
-        "wt_11_8_orb",
         "wt_11_10_crown_ste"
       ],
       "immune_to_forced_moves": true
@@ -1853,7 +1839,6 @@
       ],
       "white_tower_order": 15,
       "neighbors": [
-        "wt_11_9_crown_pow",
         "wt_11_11"
       ],
       "immune_to_forced_moves": true
@@ -1869,7 +1854,6 @@
       ],
       "white_tower_order": 16,
       "neighbors": [
-        "wt_11_10_crown_ste",
         "wt_12_11"
       ],
       "immune_to_forced_moves": true
@@ -1885,7 +1869,6 @@
       ],
       "white_tower_order": 17,
       "neighbors": [
-        "wt_11_11",
         "wt_13_11_rack_sender"
       ],
       "immune_to_forced_moves": true
@@ -1901,10 +1884,8 @@
       ],
       "white_tower_order": 18,
       "neighbors": [
-        "wt_12_11",
         "wt_14_11",
-        "iw_13_13",
-        "iw_rack"
+        "iw_13_13"
       ],
       "immune_to_forced_moves": true,
       "_note": "Landing here sends player to the Rack (iw_rack). Reusable built-in rope connects to iw_13_13 (see traversal_edges)."
@@ -1920,7 +1901,6 @@
       ],
       "white_tower_order": 19,
       "neighbors": [
-        "wt_13_11_rack_sender",
         "wt_14_10"
       ],
       "immune_to_forced_moves": true
@@ -1936,7 +1916,6 @@
       ],
       "white_tower_order": 20,
       "neighbors": [
-        "wt_14_11",
         "wt_14_9"
       ],
       "immune_to_forced_moves": true
@@ -1952,7 +1931,6 @@
       ],
       "white_tower_order": 21,
       "neighbors": [
-        "wt_14_10",
         "wt_14_8"
       ],
       "immune_to_forced_moves": true
@@ -1968,7 +1946,6 @@
       ],
       "white_tower_order": 22,
       "neighbors": [
-        "wt_14_9",
         "wt_chapel_st_john"
       ],
       "immune_to_forced_moves": true,
@@ -1990,7 +1967,6 @@
         ]
       ],
       "neighbors": [
-        "wt_14_8",
         "iw_14_4",
         "iw_16_4"
       ],
