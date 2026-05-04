@@ -3022,7 +3022,8 @@
       ],
       "neighbors": [
         "iw_14_2",
-        "iw_13_1"
+        "iw_13_1",
+        "wt_12_2"
       ]
     },
     {
@@ -3109,7 +3110,6 @@
         4
       ],
       "neighbors": [
-        "iw_15_4",
         "iw_14_3",
         "wt_chapel_st_john"
       ]
@@ -3171,23 +3171,7 @@
       "neighbors": [
         "iw_16_3",
         "iw_14_3",
-        "iw_15_4",
         "iw_15_2"
-      ]
-    },
-    {
-      "id": "iw_15_4",
-      "label": "",
-      "region": "inner_ward",
-      "kind": "raven_trigger",
-      "coords": [
-        15,
-        4
-      ],
-      "neighbors": [
-        "iw_16_4",
-        "iw_14_4",
-        "iw_15_3"
       ]
     },
     {
@@ -3245,7 +3229,6 @@
       ],
       "neighbors": [
         "iw_17_4",
-        "iw_15_4",
         "iw_16_3",
         "wt_chapel_st_john"
       ]
