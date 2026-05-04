@@ -241,7 +241,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         "justify-content:center;text-align:center;font-size:8px;" +
         "color:#111;line-height:1.2;word-break:break-word;" +
         "overflow-wrap:break-word;padding:2px;box-sizing:border-box;" +
-        (vertical ? "writing-mode:vertical-lr;" : "");
+        (vertical ? "writing-mode:vertical-rl;" : "");
       div.textContent = sp.label;
       fo.appendChild(div);
       spaceLayer.appendChild(el);
