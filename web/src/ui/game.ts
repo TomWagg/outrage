@@ -10,6 +10,7 @@ import { renderControlsPanel } from "./controls.js";
 import { renderHandPanel } from "./hand.js";
 import { renderLogPanel } from "./log.js";
 import { renderCombatModal } from "./combat.js";
+import { createDiceDisplay } from "./dice.js";
 
 export function renderGameLayout(
   root: HTMLElement,
@@ -25,12 +26,13 @@ export function renderGameLayout(
       <div class="board-wrap" id="board-wrap"></div>
       <div class="side">
         <div id="controls-slot"></div>
+        <div id="dice-slot"></div>
         <div id="hand-slot"></div>
         <div id="opponents-slot" class="panel">
           <h3>Players</h3>
           <ul class="player-list" id="opponents-list"></ul>
         </div>
-        <div id="decks-slot" class="panel">
+        <div id="decks-slot" class="panel" style='display:none;'>
           <h3>Decks &amp; jewels</h3>
           <div id="decks-info" style="font-size:0.85rem;color:var(--muted)"></div>
         </div>
@@ -53,6 +55,9 @@ export function renderGameLayout(
   const logPanel = renderLogPanel(root.querySelector<HTMLElement>("#log-slot")!);
   const combat = renderCombatModal(root.querySelector<HTMLElement>("#combat-modal-slot")!);
 
+  const dice = createDiceDisplay();
+  root.querySelector<HTMLElement>("#dice-slot")!.appendChild(dice.el);
+
   // Chat wiring.
   const chatInput = root.querySelector<HTMLInputElement>("#chat-input")!;
   const chatSend = root.querySelector<HTMLButtonElement>("#chat-send")!;
@@ -67,6 +72,11 @@ export function renderGameLayout(
     if (e.key === "Enter") sendChat();
   });
 
+  // Track the last roll we animated so we don't re-trigger on every update().
+  // Key encodes both the roll values and whose turn it is, so a new turn that
+  // happens to roll the same numbers still fires the animation.
+  let prevRollKey = "";
+
   return {
     update: () => {
       updateStatus(root, state);
@@ -78,6 +88,16 @@ export function renderGameLayout(
       logPanel.update(state);
       updateChat(root, state);
       combat.update(state, ws);
+
+      // Trigger dice animation whenever the roll changes.
+      const roll = state.game?.turn.roll ?? [];
+      const rollKey = `${state.game?.current_turn_index ?? -1}:${roll.join(",")}`;
+      if (rollKey !== prevRollKey) {
+        prevRollKey = rollKey;
+        if (roll.length === 2) {
+          dice.roll(roll[0], roll[1]);
+        }
+      }
     },
   };
 }
