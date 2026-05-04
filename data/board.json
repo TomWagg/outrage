@@ -3797,23 +3797,6 @@
       "location": "post_lanthorn"
     }
   ],
-  "display_regions": [
-    {
-      "id": "raven_deck",
-      "label": "Raven Cards",
-      "coords_region": [
-        [
-          3,
-          9
-        ],
-        [
-          6,
-          13
-        ]
-      ],
-      "purpose": "Pile + last-drawn-card display. Not a playable space."
-    }
-  ],
   "traversal_edges": [
     {
       "id": "rope_wt_13_11_to_iw_13_13",
