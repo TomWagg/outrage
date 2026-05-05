@@ -1,5 +1,9 @@
 /**
- * Game view layout: board + side panels (controls, hand, opponents, decks, log, chat).
+ * Game view layout: board + collapsible sidebar (controls, hand, opponents, decks, log, chat).
+ *
+ * The sidebar slides in/out via a toggle tab.  Each panel in the sidebar can
+ * be independently collapsed; their open/closed states persist in
+ * ``localStorage``.
  *
  * Mounted by ``main.ts`` when ``state.game`` becomes non-null.
  */
@@ -18,49 +22,119 @@ export function renderGameLayout(
   state: ClientState,
 ): { update: () => void } {
   root.innerHTML = `
-    <div class="status">
-      <span><span class="dot" id="conn-dot"></span><span id="conn-text">connecting…</span></span>
-      <span id="you-label"></span>
-    </div>
-    <div class="main">
+    <div class="main" id="game-main">
       <div class="board-wrap" id="board-wrap"></div>
-      <div class="side">
-        <div id="controls-slot"></div>
-        <div id="dice-slot"></div>
-        <div id="hand-slot"></div>
-        <div id="opponents-slot" class="panel">
-          <h3>Players</h3>
-          <ul class="player-list" id="opponents-list"></ul>
-        </div>
-        <div id="decks-slot" class="panel" style='display:none;'>
-          <h3>Decks &amp; jewels</h3>
-          <div id="decks-info" style="font-size:0.85rem;color:var(--muted)"></div>
-        </div>
-        <div id="log-slot"></div>
-        <div class="panel" id="chat-slot">
-          <h3>Chat</h3>
-          <div class="chat-log" id="chat-log"></div>
-          <div class="chat-row">
-            <input id="chat-input" placeholder="Say something…" maxlength="500" />
-            <button id="chat-send">Send</button>
+      <div class="sidebar-outer" id="sidebar-outer">
+        <div class="side">
+
+          <!-- Connection status — always visible, not collapsible -->
+          <div class="side-status">
+            <span class="dot" id="conn-dot"></span>
+            <span id="conn-text">connecting…</span>
+            <span class="side-you" id="you-label"></span>
+            <button class="sidebar-hide-btn" id="sidebar-hide-btn" title="Hide sidebar">‹</button>
           </div>
+
+          <!-- Turn controls -->
+          <div id="controls-slot"></div>
+
+          <!-- Dice -->
+          <div class="panel" id="dice-panel">
+            <h3>Dice</h3>
+            <div id="dice-slot"></div>
+          </div>
+
+          <!-- Your hand -->
+          <div id="hand-slot"></div>
+
+          <!-- Players list -->
+          <div id="opponents-slot" class="panel">
+            <h3>Players</h3>
+            <ul class="player-list" id="opponents-list"></ul>
+          </div>
+
+          <!-- Decks & jewels (hidden until game starts) -->
+          <div id="decks-slot" class="panel" style="display:none">
+            <h3>Decks &amp; jewels</h3>
+            <div id="decks-info" style="font-size:0.85rem;color:var(--muted)"></div>
+          </div>
+
+          <!-- Event log -->
+          <div id="log-slot"></div>
+
+          <!-- Chat -->
+          <div class="panel" id="chat-slot">
+            <h3>Chat</h3>
+            <div class="chat-log" id="chat-log"></div>
+            <div class="chat-row">
+              <input id="chat-input" placeholder="Say something…" maxlength="500" />
+              <button id="chat-send">Send</button>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
+
+    <!-- Tab that appears at the screen edge when the sidebar is hidden -->
+    <button class="sidebar-reveal-tab" id="sidebar-reveal-tab" title="Show sidebar">›</button>
+
     <div id="combat-modal-slot"></div>
   `;
 
+  // ---- sub-panel renderers ---------------------------------------------------
   const controls = renderControlsPanel(root.querySelector<HTMLElement>("#controls-slot")!);
-  const hand = renderHandPanel(root.querySelector<HTMLElement>("#hand-slot")!);
+  const hand     = renderHandPanel(root.querySelector<HTMLElement>("#hand-slot")!);
   const logPanel = renderLogPanel(root.querySelector<HTMLElement>("#log-slot")!);
-  const combat = renderCombatModal(root.querySelector<HTMLElement>("#combat-modal-slot")!);
+  const combat   = renderCombatModal(root.querySelector<HTMLElement>("#combat-modal-slot")!);
 
   const dice = createDiceDisplay();
   root.querySelector<HTMLElement>("#dice-slot")!.appendChild(dice.el);
 
-  // Chat wiring.
+  // ---- make all panels collapsible ------------------------------------------
+  // Panels rendered by external functions live inside their slot divs.
+  const controlsPanel  = root.querySelector<HTMLElement>("#controls-panel")!;
+  const handPanel      = root.querySelector<HTMLElement>("#hand-panel")!;
+  const logPanelEl     = root.querySelector<HTMLElement>("#log-panel")!;
+
+  makeCollapsible(controlsPanel,  "turn");
+  makeCollapsible(root.querySelector<HTMLElement>("#dice-panel")!,      "dice");
+  makeCollapsible(handPanel,      "hand");
+  makeCollapsible(root.querySelector<HTMLElement>("#opponents-slot")!,  "players");
+  makeCollapsible(root.querySelector<HTMLElement>("#decks-slot")!,      "decks");
+  makeCollapsible(logPanelEl,     "log");
+  makeCollapsible(root.querySelector<HTMLElement>("#chat-slot")!,       "chat");
+
+  // ---- sidebar toggle --------------------------------------------------------
+  const sidebarOuter = root.querySelector<HTMLElement>("#sidebar-outer")!;
+  const revealTab    = root.querySelector<HTMLElement>("#sidebar-reveal-tab")!;
+  const hideBtn      = root.querySelector<HTMLElement>("#sidebar-hide-btn")!;
+
+  const SIDEBAR_KEY = "sidebar:open";
+  const sidebarOpen = localStorage.getItem(SIDEBAR_KEY) !== "false";
+  if (!sidebarOpen) openSidebar(false);
+
+  hideBtn.addEventListener("click",   () => closeSidebar(true));
+  revealTab.addEventListener("click", () => openSidebar(true));
+
+  function closeSidebar(animate: boolean): void {
+    if (!animate) sidebarOuter.style.transition = "none";
+    sidebarOuter.classList.add("sidebar-hidden");
+    revealTab.classList.add("visible");
+    if (!animate) requestAnimationFrame(() => sidebarOuter.style.transition = "");
+    localStorage.setItem(SIDEBAR_KEY, "false");
+  }
+  function openSidebar(animate: boolean): void {
+    if (!animate) sidebarOuter.style.transition = "none";
+    sidebarOuter.classList.remove("sidebar-hidden");
+    revealTab.classList.remove("visible");
+    if (!animate) requestAnimationFrame(() => sidebarOuter.style.transition = "");
+    localStorage.setItem(SIDEBAR_KEY, "true");
+  }
+
+  // ---- chat wiring -----------------------------------------------------------
   const chatInput = root.querySelector<HTMLInputElement>("#chat-input")!;
-  const chatSend = root.querySelector<HTMLButtonElement>("#chat-send")!;
+  const chatSend  = root.querySelector<HTMLButtonElement>("#chat-send")!;
   const sendChat = () => {
     const text = chatInput.value.trim();
     if (!text) return;
@@ -68,19 +142,24 @@ export function renderGameLayout(
     chatInput.value = "";
   };
   chatSend.addEventListener("click", sendChat);
-  chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") sendChat();
-  });
+  chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
 
-  // Track the last roll we animated so we don't re-trigger on every update().
-  // Key encodes both the roll values and whose turn it is, so a new turn that
-  // happens to roll the same numbers still fires the animation.
+  // ---- roll-key tracking (unchanged from before) ----------------------------
   let prevRollKey = "";
 
   return {
     update: () => {
       updateStatus(root, state);
-      updateBoard(root, ws, state);
+
+      const roll   = state.game?.turn.roll ?? [];
+      const rollKey = `${state.game?.current_turn_index ?? -1}:${roll.join(",")}`;
+      const newRoll = rollKey !== prevRollKey && roll.length === 2;
+      if (newRoll) prevRollKey = rollKey;
+
+      if (!dice.animating && !newRoll) {
+        updateBoard(root, ws, state);
+      }
+
       controls.update(state, ws);
       hand.update(state);
       updateOpponents(root, state);
@@ -89,21 +168,63 @@ export function renderGameLayout(
       updateChat(root, state);
       combat.update(state, ws);
 
-      // Trigger dice animation whenever the roll changes.
-      const roll = state.game?.turn.roll ?? [];
-      const rollKey = `${state.game?.current_turn_index ?? -1}:${roll.join(",")}`;
-      if (rollKey !== prevRollKey) {
-        prevRollKey = rollKey;
-        if (roll.length === 2) {
-          dice.roll(roll[0], roll[1]);
-        }
+      if (newRoll) {
+        dice.roll(roll[0], roll[1], () => {
+          updateBoard(root, ws, state);
+        });
       }
     },
   };
 }
 
+// =============================================================================
+// Collapsible panels
+// =============================================================================
+
+/**
+ * Turn a ``.panel`` element into a collapsible section.
+ *
+ * Wraps all children after the first ``<h3>`` in a ``.panel-body`` div,
+ * appends a chevron arrow to the heading, and saves the open/closed state
+ * in ``localStorage`` under ``panel:<id>``.
+ */
+function makeCollapsible(panel: HTMLElement | null, id: string): void {
+  if (!panel) return;
+  const h3 = panel.querySelector<HTMLElement>(":scope > h3");
+  if (!h3) return;
+
+  // Wrap non-h3 direct children in .panel-body
+  const body = document.createElement("div");
+  body.className = "panel-body";
+  const toMove = Array.from(panel.childNodes).filter(n => n !== h3);
+  for (const child of toMove) body.appendChild(child);
+  panel.appendChild(body);
+
+  // Add chevron
+  const arrow = document.createElement("span");
+  arrow.className = "collapse-arrow";
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = "▾";
+  h3.appendChild(arrow);
+
+  // Restore saved state
+  if (localStorage.getItem(`panel:${id}`) === "closed") {
+    panel.classList.add("collapsed");
+  }
+
+  // Toggle on click
+  h3.addEventListener("click", () => {
+    const nowCollapsed = panel.classList.toggle("collapsed");
+    localStorage.setItem(`panel:${id}`, nowCollapsed ? "closed" : "open");
+  });
+}
+
+// =============================================================================
+// Status / update helpers
+// =============================================================================
+
 function updateStatus(root: HTMLElement, state: ClientState): void {
-  const dot = root.querySelector<HTMLElement>("#conn-dot")!;
+  const dot  = root.querySelector<HTMLElement>("#conn-dot")!;
   const text = root.querySelector<HTMLElement>("#conn-text")!;
   dot.classList.remove("ok", "bad");
   if (state.connected) {
@@ -138,7 +259,7 @@ function updateOpponents(root: HTMLElement, state: ClientState): void {
   ul.innerHTML = "";
   const g = state.game;
   if (!g) return;
-  const curIdx = g.current_turn_index;
+  const curIdx  = g.current_turn_index;
   const curName = g.turn_order[curIdx] ?? null;
   for (const p of g.players) {
     const li = document.createElement("li");
@@ -173,10 +294,15 @@ function updateOpponents(root: HTMLElement, state: ClientState): void {
 }
 
 function updateDecks(root: HTMLElement, state: ClientState): void {
-  const el = root.querySelector<HTMLElement>("#decks-info")!;
+  const slot = root.querySelector<HTMLElement>("#decks-slot")!;
+  const el   = root.querySelector<HTMLElement>("#decks-info")!;
   const g = state.game;
-  if (!g) { el.textContent = "—"; return; }
-  const jewelsOut = Object.keys(g.jewels_available).length;
+  if (!g) {
+    slot.style.display = "none";
+    return;
+  }
+  slot.style.removeProperty("display");
+  const jewelsOut  = Object.keys(g.jewels_available).length;
   const looseCount = Object.values(g.loose_jewels ?? {}).reduce((a, l) => a + l.length, 0);
   const tower = deckBucket(g.tower_draw_count, g.tower_discard_count);
   const raven = deckBucket(g.raven_draw_count, g.raven_discard_count);
@@ -189,13 +315,9 @@ function updateDecks(root: HTMLElement, state: ClientState): void {
 }
 
 function deckBucket(draw: number, discard: number): string {
-  // Hide exact counts so deck-counting isn't a strategy; opponents can still
-  // infer roughly where the pile is. The draw pile reshuffles from discard
-  // once it hits zero, so callers who want to know "how much is left in the
-  // round" should think of ``draw + discard``.
   if (draw === 0 && discard === 0) return "empty";
   if (draw === 0) return `reshuffling soon (${discard} in discard)`;
-  if (draw <= 5) return `~${draw} left`;
+  if (draw <= 5)  return `~${draw} left`;
   if (draw <= 15) return "running low";
   if (draw <= 30) return "plenty";
   return "full deck";
@@ -205,7 +327,7 @@ function updateChat(root: HTMLElement, state: ClientState): void {
   const log = root.querySelector<HTMLElement>("#chat-log")!;
   log.innerHTML = "";
   for (const m of state.chat.slice(-100)) {
-    const d = document.createElement("div");
+    const d    = document.createElement("div");
     d.className = "msg";
     const from = document.createElement("span");
     from.className = "from";

@@ -121,6 +121,60 @@ def test_split_seven_target_first_leg_order():
     assert moves[0]["payload"].get("move_kind") == "split_seven"
 
 
+def test_split_seven_roller_chooses_target_destination():
+    """When the target (bob) is in the inner ward with multiple reachable
+    destinations, the engine enters CHOOSING_PATH with ``is_for_target=True``
+    so the roller picks exactly where bob lands — including full landing effects.
+    """
+    # Alice is on the wall walk (linear → forced-single self-leg).
+    # Bob is already in the inner ward and accredited — multiple destinations.
+    game = GameState(
+        mode="fast",
+        players=[
+            PlayerState(username="alice", color="red", position="ww00_start"),
+            PlayerState(username="bob", color="blue", position="iw_5_3", accredited=True),
+        ],
+        turn_order=["alice", "bob"],
+        current_turn_index=0,
+        seed=1,
+    )
+    game.phase = Phase.SPLIT_SEVEN_ASSIGN
+    game.turn = TurnContext(roll=[3, 4], pending_split=PendingSplitSeven(total=7))
+    rng = Rng(seed=1)
+    _GLOBAL_RNG.set(rng)
+
+    # alice takes 5 for herself (wall-walk, forced-single → auto-resolves),
+    # bob gets 2 steps from iw_5_3 → multiple inner-ward destinations.
+    game, _ev1 = apply(
+        game, "assign_split_seven",
+        {"username": "alice", "n_self": 5, "n_other": 2, "target": "bob"},
+        board=BOARD, rng=rng,
+    )
+    assert game.phase == Phase.CHOOSING_PATH, f"Expected CHOOSING_PATH, got {game.phase}"
+    pm = game.turn.pending_move
+    assert pm is not None
+    assert pm.is_for_target is True
+    assert pm.target_for_split == "bob"
+    # Alice already committed her leg.
+    assert game.player("alice").position == "ww05"
+    # Multiple options for bob must be offered.
+    dests = list(pm.destinations.keys())
+    assert len(dests) > 1, f"Expected multiple destinations for bob, got: {dests}"
+
+    # Roller picks where bob lands.
+    chosen = dests[0]
+    game, _ev2 = apply(
+        game, "choose_move_path",
+        {"username": "alice", "destination": chosen},
+        board=BOARD, rng=rng,
+    )
+    assert game.phase in (Phase.TURN_END, Phase.RAVEN_EFFECT, Phase.JEWEL_ATTEMPT)
+    assert game.player("bob").position == chosen
+    # A player_moved event for bob must appear.
+    moves = [e for e in _ev2 if e["kind"] == "player_moved"]
+    assert any(m["payload"]["player"] == "bob" for m in moves), "No player_moved for bob"
+
+
 def test_split_seven_all_to_self_no_target_needed():
     # Place bob off the self-path so pass-through combat doesn't force a
     # CHOOSING_PATH prompt; this test is about the "all to self" branch.

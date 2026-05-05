@@ -184,6 +184,13 @@ class PendingMove(BaseModel):
     # fields let ``_intent_choose_move_path`` resume the target's movement.
     split_target: Optional[str] = None
     split_target_destination: Optional[str] = None
+    # Target-destination selection: the current player is choosing where the
+    # split-7 target moves (not where they themselves move).
+    is_for_target: bool = False
+    target_for_split: Optional[str] = None
+    # target_first: after the roller picks the target's destination, how many
+    # steps does the roller still need to take (0 = already done / self_first).
+    roller_steps_after_target: int = 0
 
 
 class TurnContext(BaseModel):
@@ -204,6 +211,9 @@ class TurnContext(BaseModel):
     # For ``binary_disruption`` and split-7: allow the roller to choose splits
     # on an arbitrary roll; we record the effective total here.
     binary_disruption_armed: bool = False
+    # Set when a Disguise card is played pre-roll; allows the player to pass
+    # through occupied Yeoman Warder posts for the remainder of this turn.
+    disguise_used: bool = False
 
 
 # ---------- log entries ----------------------------------------------------

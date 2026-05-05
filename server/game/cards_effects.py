@@ -138,12 +138,12 @@ def _sanctuary(state, player, params, *, board, rng, **kw):
 
 @register("disguise")
 def _disguise(state, player, params, *, board, rng, **kw):
-    """No-op at this layer; consumed by movement / confinement helpers.
+    """Grant passage past Yeoman Warder posts for the rest of this turn.
 
-    The rule engine consumes Disguise implicitly when the player needs to
-    pass a warder or escape prison; when played explicitly via this handler
-    we simply emit an event so the UI can show the card was played.
+    Sets ``turn.disguise_used`` so movement blocking is lifted; the card is
+    already removed from the player's hand by the pre-roll intent handler.
     """
+    state.turn.disguise_used = True
     return state, [_event("disguise_played", player=player.username)]
 
 

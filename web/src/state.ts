@@ -71,6 +71,10 @@ export interface PendingMove {
   destinations?: Record<string, string[]>;
   remaining_steps?: number;
   has_destinations?: boolean;
+  /** True when the roller is choosing where the split-7 *target* moves. */
+  is_for_target?: boolean;
+  /** The target player's username when is_for_target is set. */
+  target_for_split?: string;
 }
 
 export interface Combat {

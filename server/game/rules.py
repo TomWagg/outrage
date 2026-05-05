@@ -69,6 +69,18 @@ def _log(state: GameState, evs: Iterable[dict[str, Any]]) -> None:
         state.log.append(LogEntry(kind=e["kind"], payload=e.get("payload", {})))
 
 
+def _warder_blocked_spaces(state: GameState, board: "Board") -> set[str]:
+    """Return post space ids that are occupied by a warder this turn.
+
+    Returns an empty set when the current player has a Disguise armed
+    (``turn.disguise_used``), allowing them to pass freely.
+    """
+    if state.turn.disguise_used:
+        return set()
+    barracks = board.data.barracks_space
+    return {w.location for w in state.warders if w.location != barracks}
+
+
 def _require_phase(state: GameState, *phases: Phase) -> None:
     if state.phase not in phases:
         raise RuleError(f"Wrong phase: {state.phase.value}, expected one of {[p.value for p in phases]}")
@@ -291,6 +303,7 @@ def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, s
         board, player.position, steps, player,
         other_player_positions=others,
         visited_this_turn=state.turn.visited_this_turn,
+        warder_blocking_spaces=_warder_blocked_spaces(state, board),
     )
     if not opts.destinations:
         # No legal move — just end turn.
@@ -638,6 +651,42 @@ def _intent_choose_move_path(state, payload, *, board, rng):
     dest = payload["destination"]
     if dest not in pm.destinations:
         raise RuleError(f"Invalid destination: {dest}")
+
+    # --- target-destination branch (roller choosing where split-7 target goes) ---
+    if pm.is_for_target:
+        target_name = pm.target_for_split
+        roller_steps = pm.roller_steps_after_target
+        if not target_name:
+            raise RuleError("No target recorded for is_for_target move")
+        target = state.player(target_name)
+        path = pm.destinations[dest]
+        old_pos = target.position
+        target.position = dest
+        state.turn.pending_move = None
+        # Clear CHOOSING_PATH now that the selection is committed; _resolve_landing
+        # may override to RAVEN_EFFECT / JEWEL_ATTEMPT etc., and the guard below
+        # will set TURN_END if nothing else grabs the phase.
+        state.phase = Phase.MOVING
+        evs: list[dict[str, Any]] = [_ev(
+            "player_moved", player=target.username,
+            src=old_pos, dst=dest, path=path, move_kind="split_seven",
+        )]
+        evs.extend(_resolve_landing(state, board, target))
+        # target_first: run the roller's deferred leg now (if still no active sub-phase).
+        if roller_steps > 0 and state.phase not in (
+            Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT,
+            Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT,
+        ):
+            evs.extend(_run_roller_split_leg(state, board, player, roller_steps, target=None, target_destination=None))
+        if state.phase not in (
+            Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT,
+            Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT,
+        ):
+            state.phase = Phase.TURN_END
+        _log(state, evs)
+        return state, evs
+
+    # --- normal branch (roller choosing their own destination) ---
     # Optional: allow stopping early to initiate combat.
     stop_at = payload.get("stop_at")
     if stop_at is not None:
@@ -700,6 +749,14 @@ def _intent_assign_split_seven(state, payload, *, board, rng):
         # Resolve the target's leg before the roller moves.
         state.turn.pending_split = None
         evs.extend(_resolve_split_target_leg(state, board, target_name, n_other, target_destination))
+        if state.phase == Phase.CHOOSING_PATH:
+            # Target has multiple destinations; roller must pick one via
+            # choose_move_path.  Stash the roller's pending steps so we can
+            # resume them after the target is placed.
+            if n_self > 0 and state.turn.pending_move is not None:
+                state.turn.pending_move.roller_steps_after_target = n_self
+            _log(state, evs)
+            return state, evs
         # Now the roller's leg. No deferred-target leg afterwards.
         if n_self > 0:
             evs.extend(_run_roller_split_leg(state, board, player, n_self, target=None, target_destination=None))
@@ -755,6 +812,7 @@ def _run_roller_split_leg(
         board, player.position, n_self, player,
         other_player_positions=others,
         visited_this_turn=state.turn.visited_this_turn,
+        warder_blocking_spaces=_warder_blocked_spaces(state, board),
     )
     if not opts.destinations:
         evs.append(_ev("no_legal_move", player=player.username, steps=n_self))
@@ -807,14 +865,33 @@ def _resolve_split_target_leg(
         board, target.position, n_other, target,
         other_player_positions=others,
         visited_this_turn=[target.position],
+        warder_blocking_spaces=_warder_blocked_spaces(state, board),
     )
     if not opts.destinations:
         return evs
-    # Roller picks the target's destination via the original payload (for the
-    # direct-resolve path) or the stored ``split_target_destination`` (for
-    # the deferred CHOOSING_PATH path). Fall back to the first option.
-    tdest = target_destination
-    if tdest is None or tdest not in opts.destinations:
+    # If a destination was already specified (and is valid), use it directly.
+    tdest = target_destination if (target_destination and target_destination in opts.destinations) else None
+    if tdest is None and len(opts.destinations) > 1:
+        # Multiple options and no pre-selected destination: ask the roller to
+        # choose where the target moves by entering CHOOSING_PATH again.
+        # Callers inspect state.phase after this call and must not do
+        # further processing when we return in CHOOSING_PATH.
+        state.turn.pending_move = PendingMove(
+            steps=n_other,
+            destinations=opts.destinations,
+            is_for_target=True,
+            target_for_split=target_name,
+        )
+        state.phase = Phase.CHOOSING_PATH
+        evs.append(_ev(
+            "choose_path",
+            player=state.current_player().username,
+            destinations=list(opts.destinations.keys()),
+            for_target=target_name,
+        ))
+        return evs
+    # Single destination or explicit choice — resolve immediately.
+    if tdest is None:
         tdest = next(iter(opts.destinations))
     tpath = opts.destinations[tdest]
     old = target.position

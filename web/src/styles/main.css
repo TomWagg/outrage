@@ -96,6 +96,8 @@ input, select {
 .login-screen .row { display: flex; gap: 0.5rem; margin-top: 1rem; }
 .login-screen input { flex: 1; }
 
+/* ---- Status bar (lobby view keeps a top bar) ------------------------------ */
+
 .status {
   padding: 0.5rem 1rem;
   background: var(--panel);
@@ -106,24 +108,24 @@ input, select {
   justify-content: space-between;
   align-items: center;
 }
-.status .dot {
-  display: inline-block;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  margin-right: 0.4rem;
-  background: var(--muted);
-}
-.status .dot.ok { background: var(--ok); }
-.status .dot.bad { background: var(--danger); }
+/* .dot is also used by .side-status; defined later */
+.status .dot { margin-right: 0.4rem; }
+
+/* ---- Layout --------------------------------------------------------------- */
 
 .main {
-  display: grid;
-  grid-template-columns: 1fr 320px;
+  display: flex;
+  align-items: flex-start;
   gap: 1rem;
   padding: 1rem;
   flex: 1;
+  overflow: hidden;   /* clips the sidebar slide-out so no horizontal scroll */
+  min-height: 0;
 }
+
 .main .board-wrap {
+  flex: 1;
+  min-width: 0;       /* let flexbox shrink below content width */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -133,16 +135,163 @@ input, select {
   justify-content: center;
   min-height: 400px;
 }
+
+/* ---- Sidebar outer (handles slide animation) ------------------------------ */
+
+.sidebar-outer {
+  width: 320px;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-outer.sidebar-hidden {
+  width: 0;
+}
+
 .side {
+  width: 320px;       /* fixed inner width so content never wraps during slide */
+  flex: 0 0 320px;   /* also used as a direct flex child in the lobby layout   */
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.75rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px; /* scrollbar clearance */
+  padding-bottom: 1rem;
 }
+
+/* ---- Sidebar reveal tab (fixed at right edge when sidebar is hidden) ------- */
+
+.sidebar-reveal-tab {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 900;
+  width: 28px;
+  height: 56px;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, background 0.15s;
+}
+.sidebar-reveal-tab.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sidebar-reveal-tab:hover { background: var(--panel-2); }
+
+/* ---- Connection status row inside the sidebar ----------------------------- */
+
+.side-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.side-status .side-you {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+.side-status .sidebar-hide-btn {
+  background: none;
+  border: none;
+  padding: 0 0.15rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.side-status .sidebar-hide-btn:hover { color: var(--accent); background: none; }
+
+/* .dot is used by side-status (was also used by old .status bar) */
+.dot {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.dot.ok  { background: var(--ok); }
+.dot.bad { background: var(--danger); }
+
+/* ---- Panels --------------------------------------------------------------- */
+
 .side .panel {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
+}
+
+/* ---- Collapsible panels --------------------------------------------------- */
+
+/* h3 becomes a click target when inside a collapsible panel */
+.panel h3 {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  /* margin-bottom is handled below; keep the global h3 margin as default */
+}
+.panel h3:hover { color: var(--fg); }
+
+.panel .panel-body {
+  overflow: hidden;
+  max-height: 2400px;          /* large enough for any realistic content  */
+  opacity: 1;
+  transition:
+    max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity    0.22s ease;
+}
+
+.panel.collapsed .panel-body {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* No bottom-margin gap on h3 when panel is collapsed */
+.panel.collapsed h3 {
+  margin-bottom: 0;
+}
+
+/* Chevron arrow on each collapsible heading */
+.collapse-arrow {
+  display: inline-block;
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-left: 0.4rem;
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+.panel.collapsed .collapse-arrow {
+  transform: rotate(-90deg);
 }
 
 .player-list { list-style: none; padding: 0; margin: 0; }

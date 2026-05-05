@@ -32,10 +32,12 @@ function renderFace(die: HTMLElement, value: number, isDouble: boolean): void {
 
 export interface DiceDisplay {
   el: HTMLElement;
-  /** Animate then land on (d1, d2). */
-  roll(d1: number, d2: number): void;
+  /** Animate then land on (d1, d2). Calls onComplete when the last frame settles. */
+  roll(d1: number, d2: number, onComplete?: () => void): void;
   /** Show the last roll without animating (e.g. on reconnect). */
   show(d1: number, d2: number): void;
+  /** True while the roll animation is in progress. */
+  readonly animating: boolean;
 }
 
 export function createDiceDisplay(): DiceDisplay {
@@ -73,8 +75,11 @@ export function createDiceDisplay(): DiceDisplay {
     sumEl.classList.toggle("dice-sum-double", dbl);
   }
 
-  function roll(d1: number, d2: number): void {
+  let _animating = false;
+
+  function roll(d1: number, d2: number, onComplete?: () => void): void {
     clearPending();
+    _animating = true;
     sumEl.textContent = "";
     sumEl.classList.remove("dice-sum-double");
     die1.classList.remove("die-double");
@@ -100,9 +105,21 @@ export function createDiceDisplay(): DiceDisplay {
       );
     }
 
-    // Land on the final values after the last random frame.
-    pending.push(setTimeout(() => show(d1, d2), t));
+    // Land on the final values after the last random frame, then fire the
+    // callback so the board renderer knows it can now animate piece movement.
+    pending.push(
+      setTimeout(() => {
+        show(d1, d2);
+        _animating = false;
+        onComplete?.();
+      }, t),
+    );
   }
 
-  return { el: wrap, roll, show };
+  return {
+    el: wrap,
+    roll,
+    show,
+    get animating() { return _animating; },
+  };
 }

@@ -15,10 +15,16 @@ const PIECE_RADIUS = CELL * 0.32;
 const MAX_PIECES_PER_SPACE = 6;
 const MOVE_ANIM_MS = 320;
 
-// Persisted across renders: last rendered pixel position per player. Lets us
-// animate the piece from its previous coords to its new coords when the board
-// is rebuilt after a ``player_moved`` state change.
+// Persisted across renders: current animated pixel position per player.
+//
+// animatePiece() updates this map each rAF frame so that if renderBoard is
+// called mid-tween (from a server event arriving during the animation) the
+// new circle starts from wherever the piece currently is rather than jumping
+// to the destination and making the move look instant.
 const lastPieceCoords = new Map<string, { x: number; y: number }>();
+
+// Same pattern for warder icons — persisted so warder movement animates.
+const lastWarderCoords = new Map<string, { x: number; y: number }>();
 
 // Human-readable description for each space kind. Used for tooltips and to
 // decide which spaces get the "has an effect" dot indicator.
@@ -147,6 +153,8 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     currentTurn === youUsername &&
     dests &&
     Object.keys(dests).length > 0;
+  // When choosing for the split-7 target, use a distinct highlight colour.
+  const choosingForTarget = imChoosing && pm?.is_for_target === true;
 
   // Build the SVG.
   const svg = createSVG("svg", {
@@ -212,7 +220,8 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     el.style.fill = fill;
     el.style.cursor = "pointer";
     if (imChoosing && dests && sp.id in dests) {
-      el.setAttribute("stroke", "#e67e22");
+      // Orange for your own movement, purple for "send the target here".
+      el.setAttribute("stroke", choosingForTarget ? "#9b59b6" : "#e67e22");
       el.setAttribute("stroke-width", "3");
       el.addEventListener("click", () => onChooseDestination?.(sp.id));
     } else if (opts.onSpaceClick) {
@@ -433,6 +442,83 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     svg.appendChild(jewelLayer);
   }
 
+  // --- warders ---
+  if (game) {
+    const warderLayer = createSVG("g", { "data-layer": "warders" });
+
+    // Draw warders at their posts as animated person-with-tall-hat icons.
+    const barracksId = board.barracks_space ?? "barracks";
+    let barracksCount = 0;
+
+    for (const w of game.warders) {
+      const isBarracks = w.location === barracksId;
+      const sp = board.spaces.find((s) => s.id === w.location);
+      if (!sp) continue;
+      const rect = spaceRect(sp, toPx);
+      if (!rect) continue;
+      const tx = rect.x + rect.w / 2;
+      const ty = rect.y + rect.h / 2;
+
+      if (isBarracks) {
+        // Accumulate count; rendered as a single badge after the loop.
+        barracksCount++;
+        // Still track coords so animation works if they leave barracks.
+        if (!lastWarderCoords.has(w.id)) {
+          // Spread warders across barracks width so they don't all animate
+          // from exactly the same point.
+          const idx = barracksCount - 1;
+          const spread = rect.w / 5;
+          lastWarderCoords.set(w.id, { x: rect.x + spread * (idx + 0.75), y: ty });
+        }
+        continue;
+      }
+
+      const prev = lastWarderCoords.get(w.id);
+      const startX = prev ? prev.x : tx;
+      const startY = prev ? prev.y : ty;
+
+      const g = createSVG("g");
+      g.setAttribute("transform", `translate(${startX},${startY})`);
+      appendWarderIcon(g);
+      warderLayer.appendChild(g);
+
+      if (startX !== tx || startY !== ty) {
+        lastWarderCoords.set(w.id, { x: startX, y: startY });
+        animateWarder(g, w.id, startX, startY, tx, ty, MOVE_ANIM_MS * 1.5);
+      } else {
+        lastWarderCoords.set(w.id, { x: tx, y: ty });
+      }
+    }
+
+    // Barracks badge: mini icons for each warder stowed there.
+    if (barracksCount > 0) {
+      const barracksSp = board.spaces.find((s) => s.id === barracksId);
+      if (barracksSp) {
+        const r = spaceRect(barracksSp, toPx);
+        if (r) {
+          // Spread mini warder icons evenly across the barracks strip.
+          const slotW = r.w / 4;
+          for (let i = 0; i < barracksCount && i < 4; i++) {
+            const iconX = r.x + slotW * i + slotW / 2;
+            const iconY = r.y + r.h / 2;
+            const mg = createSVG("g");
+            mg.setAttribute("transform", `translate(${iconX},${iconY}) scale(0.55)`);
+            appendWarderIcon(mg, true);
+            warderLayer.appendChild(mg);
+          }
+        }
+      }
+    }
+
+    // Prune coords for warders no longer in the game.
+    const activeIds = new Set(game.warders.map((w) => w.id));
+    for (const id of [...lastWarderCoords.keys()]) {
+      if (!activeIds.has(id)) lastWarderCoords.delete(id);
+    }
+
+    svg.appendChild(warderLayer);
+  }
+
   // --- pieces ---
   if (game) {
     const pieceLayer = createSVG("g", { "data-layer": "pieces" });
@@ -478,9 +564,15 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         pieceLayer.appendChild(c);
 
         if (startX !== targetX || startY !== targetY) {
-          animatePiece(c, startX, startY, targetX, targetY, MOVE_ANIM_MS);
+          // Keep lastPieceCoords at the START for now.  animatePiece will
+          // update it to the current interpolated position each rAF frame so
+          // that any re-render that fires mid-tween starts from wherever the
+          // piece currently is rather than teleporting to the destination.
+          lastPieceCoords.set(p.username, { x: startX, y: startY });
+          animatePiece(c, p.username, startX, startY, targetX, targetY, MOVE_ANIM_MS);
+        } else {
+          lastPieceCoords.set(p.username, { x: targetX, y: targetY });
         }
-        lastPieceCoords.set(p.username, { x: targetX, y: targetY });
       });
     }
     // Prune history for players no longer on the board (escaped / removed).
@@ -502,6 +594,17 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
       // Labeled normal space (e.g. wall-walk action squares): the label is the
       // full description — there's no separate kind text to add.
       tooltipMap.set(sp.id, sp.label);
+    }
+  }
+  // Augment warder-post tooltips with occupancy status.
+  if (game) {
+    const barracksId = board.barracks_space ?? "barracks";
+    for (const sp of board.spaces.filter((s) => s.kind === "warder_post")) {
+      const occupied = game.warders.some(
+        (w) => w.location === sp.id && w.location !== barracksId,
+      );
+      const base = tooltipMap.get(sp.id) ?? (sp.label ?? sp.id);
+      tooltipMap.set(sp.id, `${base}\n${occupied ? "⚠ Warder on duty — need Disguise to pass" : "Warder post (unoccupied)"}`);
     }
   }
 
@@ -575,6 +678,69 @@ function jewelGlyph(id: string): string {
   }
 }
 
+/**
+ * Draw a Yeoman-Warder silhouette (person + tall flat-topped hat) centred on
+ * (0, 0) into ``parent``.  Pass ``muted=true`` for the greyed-out barracks
+ * mini-icons.
+ *
+ * Approximate bounding box: ±7 × –20..+14  (≈ 14 × 34 px).
+ */
+function appendWarderIcon(parent: SVGElement, muted = false): void {
+  const hatColor  = muted ? "#555" : "#1a1a2e";
+  const bodyColor = muted ? "#777" : "#8B1A1A";
+  const skinColor = muted ? "#999" : "#e8c49a";
+  const legColor  = muted ? "#555" : "#1a1a2e";
+
+  const shapes: Array<[string, Record<string, string>]> = [
+    // Hat crown (tall flat-top)
+    ["rect", { x: "-4.5", y: "-19", width: "9",  height: "11", rx: "1",   fill: hatColor }],
+    // Hat brim
+    ["rect", { x: "-6.5", y: "-9",  width: "13", height: "2.5",          fill: hatColor }],
+    // Head
+    ["circle", { cx: "0",  cy: "-4",  r: "3.8",                           fill: skinColor }],
+    // Body / tunic
+    ["rect", { x: "-5",   y: "0",   width: "10", height: "8",  rx: "1.5", fill: bodyColor }],
+    // Left leg
+    ["rect", { x: "-4.5", y: "8",   width: "3.5", height: "6", rx: "1",  fill: legColor  }],
+    // Right leg
+    ["rect", { x: "1",    y: "8",   width: "3.5", height: "6", rx: "1",  fill: legColor  }],
+  ];
+
+  for (const [tag, attrs] of shapes) {
+    parent.appendChild(createSVG(tag, { ...attrs, "pointer-events": "none" }));
+  }
+}
+
+/**
+ * Animate a warder ``<g>`` element from (x0,y0) to (x1,y1) via its
+ * ``transform`` attribute, updating ``lastWarderCoords`` each frame.
+ */
+function animateWarder(
+  el: SVGElement,
+  warderId: string,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  durationMs: number,
+): void {
+  const start = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / durationMs);
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const cx = x0 + (x1 - x0) * e;
+    const cy = y0 + (y1 - y0) * e;
+    el.setAttribute("transform", `translate(${cx},${cy})`);
+    lastWarderCoords.set(warderId, { x: cx, y: cy });
+    if (t < 1 && el.isConnected) {
+      requestAnimationFrame(step);
+    } else {
+      lastWarderCoords.set(warderId, { x: x1, y: y1 });
+    }
+  };
+  requestAnimationFrame(step);
+}
+
 function createSVG(tag: string, attrs: Record<string, string> = {}): SVGElement {
   const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -583,23 +749,40 @@ function createSVG(tag: string, attrs: Record<string, string> = {}): SVGElement 
 
 function animatePiece(
   el: SVGElement,
+  username: string,
   x0: number,
   y0: number,
   x1: number,
   y1: number,
   durationMs: number,
 ): void {
-  // Simple rAF tween with cubic ease-in-out. We mutate cx/cy in place; if the
-  // piece layer is re-rendered mid-animation, the element is discarded and a
-  // fresh animation starts from the previous final coords (stored in
-  // ``lastPieceCoords``), which keeps moves chained naturally.
+  // rAF tween with cubic ease-in-out.
+  //
+  // We update lastPieceCoords on every frame so that if the board is
+  // re-rendered mid-tween (from a server event, notification, etc.) the new
+  // circle starts from the current animated position rather than from the
+  // destination — which would make the move look instant.
+  //
+  // When el.isConnected becomes false the SVG was wiped by a re-render; we
+  // stop this cycle because the new renderBoard() will have spawned a fresh
+  // animatePiece() call starting from wherever lastPieceCoords was at the
+  // time of the rebuild.
   const start = performance.now();
   const step = (now: number) => {
     const t = Math.min(1, (now - start) / durationMs);
     const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    el.setAttribute("cx", String(x0 + (x1 - x0) * e));
-    el.setAttribute("cy", String(y0 + (y1 - y0) * e));
-    if (t < 1 && el.isConnected) requestAnimationFrame(step);
+    const cx = x0 + (x1 - x0) * e;
+    const cy = y0 + (y1 - y0) * e;
+    el.setAttribute("cx", String(cx));
+    el.setAttribute("cy", String(cy));
+    // Track current position so the next renderBoard starts from here.
+    lastPieceCoords.set(username, { x: cx, y: cy });
+    if (t < 1 && el.isConnected) {
+      requestAnimationFrame(step);
+    } else {
+      // Snap to exact final position when done (or when detached).
+      lastPieceCoords.set(username, { x: x1, y: y1 });
+    }
   };
   requestAnimationFrame(step);
 }

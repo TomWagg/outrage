@@ -135,22 +135,35 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       const pm = g.turn.pending_move;
       const dests = pm?.destinations ?? {};
       const keys = Object.keys(dests);
-      // Which destinations land on an enemy? (pass-through combat stops.)
-      const enemyAt = new Map<string, string>();
-      for (const p of g.players) {
-        if (p.username !== you && !p.escaped) enemyAt.set(p.position, p.username);
-      }
-      const combatStops = keys.filter((k) => enemyAt.has(k));
-      pending.innerHTML =
-        `<div>Click a highlighted square (${keys.length} option${keys.length === 1 ? "" : "s"}) or pick here:</div>` +
-        (combatStops.length
-          ? `<div style="margin-top:0.25rem;color:var(--accent);font-size:0.8rem">` +
-            `Destinations marked <strong>[fight]</strong> stop at an enemy and end your turn after combat.</div>`
-          : "");
-      for (const d of keys) {
-        const enemy = enemyAt.get(d);
-        const label = enemy ? `[fight] ${d} (vs ${enemy})` : d;
-        row.appendChild(button(label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
+      const forTarget = pm?.is_for_target === true;
+      const targetName = pm?.target_for_split ?? "target";
+      if (forTarget) {
+        // Roller is picking where the split-7 target player moves.
+        pending.innerHTML =
+          `<div>Choose where to send <strong>${targetName}</strong> ` +
+          `(${keys.length} option${keys.length === 1 ? "" : "s"}):</div>`;
+        for (const d of keys) {
+          row.appendChild(button(d, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
+        }
+      } else {
+        // Normal: roller picking their own destination.
+        // Which destinations land on an enemy? (pass-through combat stops.)
+        const enemyAt = new Map<string, string>();
+        for (const p of g.players) {
+          if (p.username !== you && !p.escaped) enemyAt.set(p.position, p.username);
+        }
+        const combatStops = keys.filter((k) => enemyAt.has(k));
+        pending.innerHTML =
+          `<div>Click a highlighted square (${keys.length} option${keys.length === 1 ? "" : "s"}) or pick here:</div>` +
+          (combatStops.length
+            ? `<div style="margin-top:0.25rem;color:var(--accent);font-size:0.8rem">` +
+              `Destinations marked <strong>[fight]</strong> stop at an enemy and end your turn after combat.</div>`
+            : "");
+        for (const d of keys) {
+          const enemy = enemyAt.get(d);
+          const label = enemy ? `[fight] ${d} (vs ${enemy})` : d;
+          row.appendChild(button(label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
+        }
       }
       break;
     }
