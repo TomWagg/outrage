@@ -266,7 +266,8 @@
       "wall_walk_order": 16,
       "neighbors": [
         "ww15",
-        "ww17"
+        "ww17",
+        "iw_13_1"
       ],
       "action": {
         "key": "go_to",
@@ -3008,7 +3009,8 @@
         1
       ],
       "neighbors": [
-        "iw_13_2"
+        "iw_13_2",
+        "ww16_go_qh"
       ]
     },
     {
