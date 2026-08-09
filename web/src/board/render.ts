@@ -157,14 +157,16 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
   const choosingForTarget = imChoosing && pm?.is_for_target === true;
 
   // Build the SVG.
+  // width/height are intentionally omitted so the SVG is intrinsically sized
+  // by its viewBox alone; CSS then sets width:100%/height:auto so the board
+  // fills whatever space the container offers and reflows during transitions.
   const svg = createSVG("svg", {
     viewBox: `0 0 ${w} ${h}`,
-    width: String(w),
-    height: String(h),
     "data-board": "1",
   });
   svg.style.display = "block";
-  svg.style.margin = "0 auto";
+  svg.style.width = "100%";
+  svg.style.height = "auto";
   svg.style.background = "#223";
   svg.style.borderRadius = "8px";
 
@@ -690,20 +692,21 @@ function appendWarderIcon(parent: SVGElement, muted = false): void {
   const bodyColor = muted ? "#777" : "#8B1A1A";
   const skinColor = muted ? "#999" : "#e8c49a";
   const legColor  = muted ? "#555" : "#1a1a2e";
+  const outlineColour = "#000"; // stroke colour for all shapes
 
   const shapes: Array<[string, Record<string, string>]> = [
     // Hat crown (tall flat-top)
-    ["rect", { x: "-4.5", y: "-19", width: "9",  height: "11", rx: "1",   fill: hatColor }],
+    ["rect", { x: "-4.5", y: "-19", width: "9",  height: "11", rx: "1",   fill: hatColor, stroke: outlineColour }],
     // Hat brim
-    ["rect", { x: "-6.5", y: "-9",  width: "13", height: "2.5",          fill: hatColor }],
+    ["rect", { x: "-6.5", y: "-9",  width: "13", height: "2.5",          fill: hatColor, stroke: outlineColour }],
     // Head
-    ["circle", { cx: "0",  cy: "-4",  r: "3.8",                           fill: skinColor }],
+    ["circle", { cx: "0",  cy: "-4",  r: "3.8",                           fill: skinColor, stroke: outlineColour }],
     // Body / tunic
-    ["rect", { x: "-5",   y: "0",   width: "10", height: "8",  rx: "1.5", fill: bodyColor }],
+    ["rect", { x: "-5",   y: "0",   width: "10", height: "8",  rx: "1.5", fill: bodyColor, stroke: outlineColour }],
     // Left leg
-    ["rect", { x: "-4.5", y: "8",   width: "3.5", height: "6", rx: "1",  fill: legColor  }],
+    ["rect", { x: "-4.5", y: "8",   width: "3.5", height: "6", rx: "1",  fill: legColor, stroke: outlineColour  }],
     // Right leg
-    ["rect", { x: "1",    y: "8",   width: "3.5", height: "6", rx: "1",  fill: legColor  }],
+    ["rect", { x: "1",    y: "8",   width: "3.5", height: "6", rx: "1",  fill: legColor, stroke: outlineColour  }],
   ];
 
   for (const [tag, attrs] of shapes) {
