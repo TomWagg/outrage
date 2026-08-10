@@ -7,6 +7,7 @@
  */
 import type { ClientState, Card, GamePlayer } from "../state.js";
 import { playerByName } from "../state.js";
+import { towerCardIcon } from "./card_art.js";
 
 export function renderHandPanel(root: HTMLElement): { update: (state: ClientState) => void } {
   root.innerHTML = `
@@ -72,11 +73,19 @@ function cardRow(c: Card): HTMLElement {
   li.style.border = "1px solid var(--border)";
   li.style.borderRadius = "4px";
 
+  // The card's own art, at row scale — the same icon the reveal modal shows,
+  // so a card is recognisable in the hand without reading the name.
+  const icon = document.createElement("span");
+  icon.className = "hand-card-icon";
+  icon.innerHTML = towerCardIcon(c.name, 18);
+  icon.title = shortCategoryLabel(c.category);
+  li.appendChild(icon);
+
   const tag = document.createElement("span");
   tag.textContent = shortCategory(c.category);
   tag.style.fontSize = "0.65rem";
   tag.style.color = "var(--muted)";
-  tag.style.minWidth = "3.2em";
+  tag.style.minWidth = "2.6em";
   li.appendChild(tag);
 
   const name = document.createElement("span");
@@ -84,9 +93,9 @@ function cardRow(c: Card): HTMLElement {
   name.style.flex = "1";
   li.appendChild(name);
 
-  if (typeof c.value === "number") {
+  if (typeof c.value === "number" && c.value != 0) {
     const val = document.createElement("span");
-    val.textContent = `+${c.value}`;
+    val.textContent = `${c.value}`;
     val.style.color = "var(--accent)";
     li.appendChild(val);
   }
@@ -101,5 +110,17 @@ function shortCategory(cat: string | null | undefined): string {
     case "utility": return "UTL";
     case "custom": return "CST";
     default: return "—";
+  }
+}
+
+/** Spelled-out category, used as the icon's hover title. */
+function shortCategoryLabel(cat: string | null | undefined): string {
+  switch (cat) {
+    case "weapon": return "Weapon";
+    case "burglary": return "Burglary tool";
+    case "traversal": return "Traversal";
+    case "utility": return "Utility";
+    case "custom": return "Special";
+    default: return "Card";
   }
 }

@@ -20,10 +20,19 @@
 import type { WsClient } from "../net/ws.js";
 import type { Card, ClientState, GameSnapshot, RavenNotice } from "../state.js";
 import { ravenCardCopy, towerCardCopy } from "./card_descriptions.js";
+import {
+  ravenCardBack, ravenCardIcon, towerCardBack, towerCardIcon,
+} from "./card_art.js";
 
 interface TowerModal {
   cardId: string;
   cardName: string;
+  /** Combat / burglary value, when the card has one. */
+  value: number;
+  category: string | null;
+  /** Flipped face-up by the player. Lives here, not in the DOM, so a snapshot
+   *  arriving mid-modal doesn't turn the card back over. */
+  revealed: boolean;
 }
 
 interface ToastSpec {
@@ -59,12 +68,18 @@ export function mountNotifications(
   // and we never want the same modal twice in the queue.
   const queuedIds = new Set<string>();
 
-  function pushTowerModal(cardId: string, cardName: string): void {
+  function pushTowerModal(
+    cardId: string, cardName: string, value: number, category: string | null,
+  ): void {
     if (queuedIds.has(cardId)) return;
     queuedIds.add(cardId);
-    towerQueue.push({ cardId, cardName });
+    towerQueue.push({ cardId, cardName, value, category, revealed: false });
     renderModal();
   }
+
+  // Raven notices are shared state on the server, so "have I turned this one
+  // over?" is tracked locally per card id.
+  const revealedRavenIds = new Set<string>();
   function popTowerModal(cardId: string): void {
     const idx = towerQueue.findIndex((m) => m.cardId === cardId);
     if (idx >= 0) towerQueue.splice(idx, 1);
@@ -101,15 +116,21 @@ export function mountNotifications(
     // Raven modal takes precedence — public, blocking-style.
     const notice = game?.active_raven_notice ?? null;
     if (notice) {
-      modalSlot.appendChild(renderRavenModal(notice, ws, state.you));
+      modalSlot.appendChild(renderRavenModal(
+        notice, ws, state.you,
+        revealedRavenIds.has(notice.card_id),
+        () => { revealedRavenIds.add(notice.card_id); renderModal(); },
+      ));
       return;
     }
     // Then any queued tower modals (drawer-only).
     if (towerQueue.length > 0) {
       const top = towerQueue[0];
-      modalSlot.appendChild(
-        renderTowerModal(top, () => popTowerModal(top.cardId)),
-      );
+      modalSlot.appendChild(renderTowerModal(
+        top,
+        () => popTowerModal(top.cardId),
+        () => { top.revealed = true; renderModal(); },
+      ));
     }
   }
 
@@ -131,8 +152,9 @@ export function mountNotifications(
       // Look up the card name from your hand (or recently-discarded if it was
       // a raven side-effect that auto-played). Fall back to the id.
       const cardId = String(p?.card ?? "");
-      const cardName = cardNameFromId(state.game, cardId);
-      pushTowerModal(cardId, cardName);
+      const card = cardFromId(state.game, cardId);
+      const cardName = card?.name ?? slugToName(cardId);
+      pushTowerModal(cardId, cardName, card?.value ?? 0, card?.category ?? null);
     } else {
       pushToast(`${drawer} drew a tower card.`, "tower");
     }
@@ -351,32 +373,103 @@ export function mountNotifications(
 // ---- Modal builders --------------------------------------------------------
 
 /**
- * Wrap a card face in the flip scaffolding so it lands face-down and turns
- * over to reveal itself, the way you'd actually deal it at the table.
+ * Wrap a card face in the flip scaffolding. The card lands face-down and stays
+ * there until the player turns it over themselves — the reveal is the moment,
+ * so it shouldn't happen while they're still looking at the board.
  *
- * The flip is pure CSS (a delayed keyframe on ``.notif-card-inner``), so there
- * is no JS timer to leak if the modal is dismissed mid-animation.
+ * ``revealed`` has to be passed in rather than tracked in the DOM: renderModal
+ * rebuilds this markup on every snapshot, so a card revealed mid-turn would
+ * flip back over the moment anything else happened in the game.
+ *
+ * The flip itself is a CSS keyframe gated on ``.is-revealed``, so there's no JS
+ * timer to leak if the modal is dismissed mid-animation.
  */
-function flipCard(faceHtml: string, flavor: "tower" | "raven"): string {
-  const crest = flavor === "raven" ? "🐦‍⬛" : "⚜";
+function flipCard(faceHtml: string, flavor: "tower" | "raven", revealed: boolean): string {
+  const crest = flavor === "raven" ? ravenCardBack(72) : towerCardBack(72);
   const backLabel = flavor === "raven" ? "Raven" : "Tower";
   return `
     <div class="notif-card-flip">
-      <div class="notif-card-inner">
-        <div class="notif-card-back notif-card-back-${flavor}" aria-hidden="true">
-          <div class="notif-card-crest">${crest}</div>
-          <div class="notif-card-back-label">${backLabel}</div>
-        </div>
+      <div class="notif-card-inner${revealed ? " is-revealed" : ""}">
+        <button type="button" class="notif-card-back notif-card-back-${flavor}"
+                data-action="reveal" ${revealed ? "disabled" : ""}
+                aria-label="Turn the card over">
+          <span class="notif-card-crest">${crest}</span>
+          <span class="notif-card-back-label">${backLabel}</span>
+        </button>
         ${faceHtml}
       </div>
     </div>
   `;
 }
 
+/**
+ * The card face: name boldly across the top, a large icon, then the value and
+ * any explanatory text. Shared by both flavours so they stay in step.
+ */
+function cardFace(opts: {
+  flavor: "tower" | "raven";
+  title: string;
+  icon: string;
+  value?: string | null;
+  description: string;
+  meta?: string | null;
+}): string {
+  return `
+    <div class="notif-card notif-card-${opts.flavor}">
+      <h3 class="notif-card-title">${escapeHtml(opts.title)}</h3>
+      <div class="notif-card-art">${opts.icon}</div>
+      ${opts.value ? `<div class="notif-card-value">${escapeHtml(opts.value)}</div>` : ""}
+      <p class="notif-card-body">${escapeHtml(opts.description)}</p>
+      ${opts.meta ? `<div class="notif-card-meta">${escapeHtml(opts.meta)}</div>` : ""}
+    </div>
+  `;
+}
+
+/** "Weapon · 10" / "Burglary tool · 2" — empty for cards with no value. */
+function valueLine(category: string | null, value: number): string | null {
+  if (!value) return null;
+  const label =
+    category === "weapon" ? "Weapon"
+    : category === "burglary" ? "Burglary tool"
+    : "Value";
+  return `${label} · ${value}`;
+}
+
+/**
+ * The modal's footer. Before the card is turned over the only action offered is
+ * "Reveal" — dismissing an unseen card would throw away the one moment the
+ * modal exists for.
+ */
+function modalFoot(revealed: boolean, dismissLabel: string, hint: string): string {
+  if (!revealed) {
+    return `
+      <div class="notif-modal-foot">
+        <button class="notif-dismiss" data-action="reveal">Reveal</button>
+        <span class="notif-modal-hint">Turn the card over.</span>
+      </div>
+    `;
+  }
+  return `
+    <div class="notif-modal-foot">
+      <button class="notif-dismiss" data-action="dismiss">${escapeHtml(dismissLabel)}</button>
+      <span class="notif-modal-hint">${escapeHtml(hint)}</span>
+    </div>
+  `;
+}
+
+/** Wire both reveal affordances — the footer button and the card back itself. */
+function bindReveal(wrap: HTMLElement, onReveal: () => void): void {
+  for (const el of wrap.querySelectorAll<HTMLElement>('[data-action="reveal"]')) {
+    el.addEventListener("click", onReveal);
+  }
+}
+
 function renderRavenModal(
   notice: RavenNotice,
   ws: WsClient,
   you: string | null,
+  revealed: boolean,
+  onReveal: () => void,
 ): HTMLElement {
   const copy = ravenCardCopy(notice.effect_key, notice.params);
   const wrap = document.createElement("div");
@@ -384,24 +477,22 @@ function renderRavenModal(
   wrap.innerHTML = `
     <div class="notif-modal notif-modal-raven" role="dialog" aria-modal="true">
       <div class="notif-modal-header">Raven card triggered</div>
-      ${flipCard(`
-        <div class="notif-card notif-card-raven">
-          <h3 class="notif-card-title">${escapeHtml(copy.title)}</h3>
-          <p class="notif-card-body">${escapeHtml(copy.description)}</p>
-          <div class="notif-card-meta">Drawn by ${escapeHtml(notice.drawer)}</div>
-        </div>
-      `, "raven")}
-      <div class="notif-modal-foot">
-        <button class="notif-dismiss" data-action="dismiss">Dismiss for everyone</button>
-        <span class="notif-modal-hint">${
-          you === notice.drawer
-            ? "You drew this."
-            : "Anyone can dismiss when they're ready."
-        }</span>
-      </div>
+      ${flipCard(cardFace({
+        flavor: "raven",
+        title: copy.title,
+        icon: ravenCardIcon(notice.effect_key),
+        description: copy.description,
+        meta: `Drawn by ${notice.drawer}`,
+      }), "raven", revealed)}
+      ${modalFoot(
+        revealed,
+        "Dismiss for everyone",
+        you === notice.drawer ? "You drew this." : "Anyone can dismiss when they're ready.",
+      )}
     </div>
   `;
-  wrap.querySelector<HTMLButtonElement>(".notif-dismiss")!.addEventListener("click", () => {
+  bindReveal(wrap, onReveal);
+  wrap.querySelector<HTMLButtonElement>('[data-action="dismiss"]')?.addEventListener("click", () => {
     ws.send("dismiss_raven_notice", { card_id: notice.card_id }).catch(() => {
       // Silently swallow — the snapshot will reflect reality regardless.
     });
@@ -409,39 +500,43 @@ function renderRavenModal(
   return wrap;
 }
 
-function renderTowerModal(modal: TowerModal, onDismiss: () => void): HTMLElement {
+function renderTowerModal(
+  modal: TowerModal,
+  onDismiss: () => void,
+  onReveal: () => void,
+): HTMLElement {
   const copy = towerCardCopy(modal.cardName);
   const wrap = document.createElement("div");
   wrap.className = "notif-modal-backdrop";
   wrap.innerHTML = `
     <div class="notif-modal notif-modal-tower" role="dialog" aria-modal="true">
       <div class="notif-modal-header">Tower card acquired!</div>
-      ${flipCard(`
-        <div class="notif-card notif-card-tower">
-          <h3 class="notif-card-title">${escapeHtml(copy.title)}</h3>
-          <p class="notif-card-body">${escapeHtml(copy.description)}</p>
-        </div>
-      `, "tower")}
-      <div class="notif-modal-foot">
-        <button class="notif-dismiss" data-action="dismiss">Dismiss</button>
-      </div>
+      ${flipCard(cardFace({
+        flavor: "tower",
+        title: copy.title,
+        icon: towerCardIcon(modal.cardName),
+        value: valueLine(modal.category, modal.value),
+        description: copy.description,
+      }), "tower", modal.revealed)}
+      ${modalFoot(modal.revealed, "Dismiss", "")}
     </div>
   `;
-  wrap.querySelector<HTMLButtonElement>(".notif-dismiss")!.addEventListener("click", onDismiss);
+  bindReveal(wrap, onReveal);
+  wrap.querySelector<HTMLButtonElement>('[data-action="dismiss"]')?.addEventListener("click", onDismiss);
   return wrap;
 }
 
 // ---- Helpers ---------------------------------------------------------------
 
-function cardNameFromId(game: GameSnapshot | null, cardId: string): string {
-  if (!game) return slugToName(cardId);
+/** Find the full card in the viewer's hand — only they can see it. */
+function cardFromId(game: GameSnapshot | null, cardId: string): Card | null {
+  if (!game) return null;
   for (const p of game.players) {
     for (const c of p.hand as Card[]) {
-      if (c.id === cardId) return c.name;
+      if (c.id === cardId) return c;
     }
   }
-  // Fallback: parse `tower:{slug}:{counter}` shape.
-  return slugToName(cardId);
+  return null;
 }
 
 function slugToName(cardId: string): string {

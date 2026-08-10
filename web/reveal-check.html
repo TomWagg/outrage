@@ -1,0 +1,75 @@
+<meta charset="utf-8">
+<title>Reveal flow check</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>body{background:#1a1a1a;color:#f0ead6;font-family:Georgia,serif;padding:1rem}
+ #log{font-size:.8rem;white-space:pre-wrap;margin-top:1rem;color:#8f8}</style>
+<div id="log">running…</div>
+<script type="module">
+  import { mountNotifications } from "/src/ui/notifications.ts";
+
+  // Minimal stubs: capture the ws handlers so we can fire events by hand.
+  const handlers = new Map();
+  const ws = {
+    on: (k, fn) => handlers.set(k, fn),
+    send: async () => {},
+  };
+  const card = { id: "tower:crossbow:1", kind: "tower", name: "Crossbow",
+                 category: "weapon", value: 10 };
+  const state = {
+    you: "Tom",
+    game: {
+      players: [{ username: "Tom", hand: [card], hand_size: 1 }],
+      active_raven_notice: null,
+    },
+  };
+  const notif = mountNotifications(ws, state, () => {});
+
+  const out = [];
+  const q = (sel) => document.querySelector(sel);
+  const flipped = () => !!q(".notif-card-inner.is-revealed");
+  const footBtn = () => q('.notif-modal-foot [data-action]')?.getAttribute("data-action");
+  const check = (label, got, want) =>
+    out.push(`${got === want ? "PASS" : "FAIL"}  ${label}: ${got}${got === want ? "" : ` (want ${want})`}`);
+
+  // Draw a card for the local player.
+  handlers.get("tower_card_drawn")({ player: "Tom", card: card.id });
+
+  check("modal appears", !!q(".notif-card-flip"), true);
+  check("starts face-down", flipped(), false);
+  check("footer offers reveal", footBtn(), "reveal");
+  check("card back is clickable", !!q('.notif-card-back[data-action="reveal"]:not(:disabled)'), true);
+
+  // A snapshot arriving before reveal must not flip it.
+  notif.update();
+  check("still face-down after re-render", flipped(), false);
+
+  // Reveal via the footer button.
+  q('.notif-modal-foot [data-action="reveal"]').click();
+  check("flips on reveal", flipped(), true);
+  check("footer swaps to dismiss", footBtn(), "dismiss");
+  check("back now inert", !!q(".notif-card-back:disabled"), true);
+
+  // The bug this guards against: a snapshot mid-modal un-flipping the card.
+  notif.update();
+  check("stays face-up after re-render", flipped(), true);
+  check("footer stays dismiss after re-render", footBtn(), "dismiss");
+
+  // Revealing via the card back itself.
+  q('.notif-modal-foot [data-action="dismiss"]').click();
+  const card2 = { ...card, id: "tower:mace:1", name: "Mace", value: 2 };
+  state.game.players[0].hand = [card2];
+  handlers.get("tower_card_drawn")({ player: "Tom", card: card2.id });
+  check("second card face-down", flipped(), false);
+  q(".notif-card-back").click();
+  check("clicking the back reveals", flipped(), true);
+
+  // Leave a fresh face-down card on screen so the resting state is visible.
+  q('.notif-modal-foot [data-action="dismiss"]').click();
+  const card3 = { ...card, id: "tower:key:1", name: "A Key to the Jewel Cases", value: 9,
+                  category: "burglary" };
+  state.game.players[0].hand = [card3];
+  handlers.get("tower_card_drawn")({ player: "Tom", card: card3.id });
+
+  document.getElementById("log").textContent =
+    out.join("\n") + `\n\n${out.filter(l => l.startsWith("FAIL")).length} failures`;
+</script>

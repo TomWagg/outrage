@@ -8,6 +8,7 @@
  * engine is in ``CHOOSING_PATH`` and the viewer is the current player.
  */
 import type { BoardData, BoardSpace, GameSnapshot } from "../state.js";
+import { jewelIconPaths } from "../ui/card_art.js";
 
 const CELL = 32;                          // pixels per grid unit
 
@@ -594,17 +595,29 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         stroke: "#b7950b",
         "stroke-width": "2",
       });
-      const t = createSVG("text", {
-        x: String(px + CELL / 2),
-        y: String(py + CELL / 2 + 3),
-        "text-anchor": "middle",
-        "font-size": "8",
-        fill: "#111",
-        "pointer-events": "none",
-      });
-      t.textContent = jewelGlyph(jewelId);
       jewelLayer.appendChild(ring);
-      jewelLayer.appendChild(t);
+
+      // The jewel's own emblem on the gold disc. The art is authored on a
+      // 24x24 grid, so scale it down and offset to the disc's centre. Filled,
+      // not stroked — the disc is only ~22px across.
+      const ICON_PX = CELL * 0.6;
+      const scale = ICON_PX / 24;
+      const paths = jewelIconPaths(jewelId);
+      if (paths) {
+        const g = createSVG("g", {
+          transform:
+            `translate(${px + CELL / 2 - ICON_PX / 2}, ${py + CELL / 2 - ICON_PX / 2}) ` +
+            `scale(${scale})`,
+          fill: "#3a2c00",
+          stroke: "none",
+          "pointer-events": "none",
+        });
+        g.innerHTML = paths;
+        jewelLayer.appendChild(g);
+      }
+      const title = createSVG("title");
+      title.textContent = jewelName(jewelId);
+      ring.appendChild(title);
     }
     svg.appendChild(jewelLayer);
   }
@@ -1011,14 +1024,14 @@ function spaceRect(
 }
 
 
-function jewelGlyph(id: string): string {
+function jewelName(id: string): string {
   switch (id) {
-    case "crown_st_edward": return "♕";
-    case "crown_prince_of_wales": return "♔";
-    case "orb": return "O";
-    case "sceptre": return "↟";
-    case "sword": return "†";
-    default: return "?";
+    case "crown_st_edward": return "St Edward's Crown";
+    case "crown_prince_of_wales": return "The Prince of Wales's Crown";
+    case "orb": return "The Sovereign's Orb";
+    case "sceptre": return "The Sceptre";
+    case "sword": return "The Sword";
+    default: return id;
   }
 }
 

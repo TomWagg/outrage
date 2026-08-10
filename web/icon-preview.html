@@ -1,0 +1,90 @@
+<meta charset="utf-8">
+<title>Outrage card art preview</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>
+  body { background:#1a1a1a; color:#f0ead6; font-family:Georgia,serif; padding:1.5rem; }
+  h2 { color:#d4af37; font-size:1rem; letter-spacing:.12em; text-transform:uppercase;
+       border-bottom:1px solid #444; padding-bottom:.4rem; margin:2rem 0 1rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:1rem; }
+  .cell { text-align:center; border:1px solid #333; border-radius:8px; padding:.8rem .4rem;
+          background:#2a2a2a; }
+  .cell .lbl { font-size:.7rem; color:#888; margin-top:.5rem; line-height:1.25; }
+  .tower { color:#d4af37; }
+  .raven { color:#c69af0; }
+  .backs { display:flex; gap:2rem; }
+  .backwrap { width:200px; }
+  /* The real backs live inside a 3D flip; flatten them for this preview. */
+  .backs .notif-card-back { position:static; transform:none; backface-visibility:visible; }
+</style>
+<div id="out"></div>
+<script type="module">
+  import { towerCardBack, ravenCardBack, towerCardIcon, ravenCardIcon, jewelIconPaths }
+    from "/src/ui/card_art.ts";
+
+  const JEWELS = ["crown_st_edward","crown_prince_of_wales","orb","sceptre","sword"];
+  // Mirrors how render.ts draws them: gold disc, dark emblem.
+  const jewelDisc = (id, px = 64) => `
+    <svg viewBox="0 0 24 24" width="${px}" height="${px}">
+      <circle cx="12" cy="12" r="11" fill="#f1c40f" stroke="#b7950b" stroke-width="1.4"/>
+      <g transform="translate(4.8 4.8) scale(0.6)" fill="#3a2c00" stroke="none">
+        ${jewelIconPaths(id)}
+      </g>
+    </svg>`;
+
+  const TOWER = ["File","Dynamite","Crowbar","A Key to the Jewel Cases","Brace of Pistols",
+    "Crossbow","Suit of Armour","Mace","Sword","Dagger","Ladder","Rope","Tower Pass",
+    "Sanctuary","Disguise","Royal Pardon","Rack Pardon","Confession","Firecrackers",
+    "Lasso","Binary Disruption","Mass Accretor"];
+  const RAVEN = ["go_to_location","go_to_jewel_view","call_warder_to_post",
+    "return_warder_to_barracks","pecked_by_ravens","rest_on_bench","photo_with_warder",
+    "stopped_and_searched","clerk_tea_exception","governors_tea","ghost","queens_birthday",
+    "lost","chief_yeoman_passes","bowyer_questioning","shop_for_film",
+    "beauchamp_imprisonment","rack_of_torment","metallicity"];
+
+  const cell = (svg, label, cls) =>
+    `<div class="cell"><div class="${cls}">${svg}</div><div class="lbl">${label}</div></div>`;
+
+  document.getElementById("out").innerHTML = `
+    <h2>Card backs</h2>
+    <div class="backs">
+      <div class="backwrap"><div class="notif-card-back notif-card-back-tower" style="position:relative;height:260px">
+        <div class="notif-card-crest">${towerCardBack(72)}</div>
+        <div class="notif-card-back-label">Tower</div></div></div>
+      <div class="backwrap"><div class="notif-card-back notif-card-back-raven" style="position:relative;height:260px">
+        <div class="notif-card-crest">${ravenCardBack(72)}</div>
+        <div class="notif-card-back-label">Raven</div></div></div>
+    </div>
+    <h2>Card faces</h2>
+    <div class="backs">
+      <div class="backwrap">
+        <div class="notif-card notif-card-tower">
+          <h3 class="notif-card-title">Crossbow</h3>
+          <div class="notif-card-art">${towerCardIcon("Crossbow", 88)}</div>
+          <div class="notif-card-value">Weapon · 10</div>
+          <p class="notif-card-body">Weapon, value 10. Strong combat card.</p>
+        </div>
+      </div>
+      <div class="backwrap">
+        <div class="notif-card notif-card-raven">
+          <h3 class="notif-card-title">Rack of Torment</h3>
+          <div class="notif-card-art">${ravenCardIcon("rack_of_torment", 88)}</div>
+          <p class="notif-card-body">Dragged to the Rack for three turns. Forfeit your coin, or your whole hand.</p>
+          <div class="notif-card-meta">Drawn by Tom</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Crown Jewels (board markers)</h2>
+    <div class="grid">${JEWELS.map(j =>
+      `<div class="cell">${jewelDisc(j, 56)}<div class="lbl">${j.replace(/_/g," ")}</div></div>`
+    ).join("")}</div>
+    <p style="color:#888;font-size:.75rem">At true board scale (CELL·0.7 ≈ 22px):
+      ${JEWELS.map(j => jewelDisc(j, 22)).join(" ")}
+      &nbsp;&nbsp;and zoomed 2x: ${JEWELS.map(j => jewelDisc(j, 44)).join(" ")}</p>
+
+    <h2>Tower cards (${TOWER.length})</h2>
+    <div class="grid">${TOWER.map(n => cell(towerCardIcon(n, 56), n, "tower")).join("")}</div>
+    <h2>Raven cards (${RAVEN.length})</h2>
+    <div class="grid">${RAVEN.map(k => cell(ravenCardIcon(k, 56), k.replace(/_/g," "), "raven")).join("")}</div>
+  `;
+</script>

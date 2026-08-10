@@ -466,29 +466,58 @@ input, select {
 .notif-card-flip {
   perspective: 1200px;
 }
+/* Face-down until the player reveals it — the flip runs only on .is-revealed. */
 .notif-card-inner {
   position: relative;
   transform-style: preserve-3d;
   transform: rotateY(180deg);
-  animation: notif-card-flip 0.65s cubic-bezier(0.32, 0.9, 0.3, 1) 0.4s forwards;
 }
+.notif-card-inner.is-revealed {
+  animation: notif-card-flip 0.65s cubic-bezier(0.32, 0.9, 0.3, 1) forwards;
+}
+
+/* The back is a button, so the card itself is clickable to turn over. Most of
+   this is undoing the global button styling. */
 .notif-card-back {
   position: absolute;
   inset: 0;
+  width: 100%;
   border: 2px solid var(--accent);
   border-radius: 10px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
+  -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   transform: rotateY(180deg);
   /* Woven diagonal weave so the back reads as a card back, not a blank panel. */
   background:
     repeating-linear-gradient(45deg, rgba(0,0,0,0.22) 0 6px, transparent 6px 12px),
     linear-gradient(180deg, #3a3225 0%, #241f16 100%);
+  transition: box-shadow 0.18s ease-out, border-color 0.18s ease-out;
 }
+/* Beat `button:hover` — without this the whole card back turns solid gold. */
+.notif-card-back:hover:not(:disabled) {
+  background:
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.22) 0 6px, transparent 6px 12px),
+    linear-gradient(180deg, #4a4030 0%, #2c261a 100%);
+  color: inherit;
+  box-shadow: 0 0 22px rgba(212, 175, 55, 0.35);
+}
+.notif-card-back-raven:hover:not(:disabled) {
+  background:
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.25) 0 6px, transparent 6px 12px),
+    linear-gradient(180deg, #3f2c5b 0%, #221733 100%);
+  box-shadow: 0 0 22px rgba(160, 107, 207, 0.4);
+}
+/* Once flipped the back is behind the face; keep it inert and un-dimmed. */
+.notif-card-back:disabled { opacity: 1; cursor: default; pointer-events: none; }
 .notif-card-back-raven {
   border-color: #6b3a8c;
   background:
@@ -496,11 +525,15 @@ input, select {
     linear-gradient(180deg, #33244a 0%, #1a1226 100%);
 }
 .notif-card-crest {
-  font-size: 2.4rem;
-  line-height: 1;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+  display: block;
+  line-height: 0;
+  color: var(--accent);
+  opacity: 0.85;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.55));
 }
+.notif-card-back-raven .notif-card-crest { color: #c69af0; }
 .notif-card-back-label {
+  display: block;
   font-family: "Georgia", serif;
   font-size: 0.75rem;
   letter-spacing: 0.22em;
@@ -514,28 +547,68 @@ input, select {
   background: linear-gradient(180deg, #2f2a20 0%, #1f1c14 100%);
   padding: 1.25rem 1.25rem 1rem 1.25rem;
   position: relative;
+  /* The translateZ is load-bearing, not a hack for its own sake:
+     backface-visibility is only honoured on an element that is itself
+     3D-transformed. With `transform: none` the browser ignores it and the
+     mirrored face shows through the card back. rotateY(0deg) is no good here —
+     it collapses to a 2D matrix; translateZ forces a real matrix3d. */
+  transform: translateZ(0.1px);
+  -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  /* Glow settles in just as the face comes round. */
-  animation: notif-card-settle 0.5s ease-out 0.85s both;
 }
+/* Glow settles in just as the face comes round — only once revealed. */
+.is-revealed .notif-card { animation: notif-card-settle 0.5s ease-out 0.45s both; }
 .notif-card-raven {
   border-color: #6b3a8c;
   background: linear-gradient(180deg, #2a1f3a 0%, #1a1226 100%);
 }
 .notif-card-title {
-  margin: 0 0 0.6rem 0;
-  font-size: 1.4rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 1.35rem;
+  font-weight: 700;
   text-align: center;
   color: var(--accent);
   letter-spacing: 0.02em;
+  line-height: 1.2;
+  /* Rule under the name, so it reads as a card header. */
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.28);
 }
-.notif-card-raven .notif-card-title { color: #d8b6ff; }
+.notif-card-raven .notif-card-title {
+  color: #d8b6ff;
+  border-bottom-color: rgba(198, 154, 240, 0.3);
+}
+
+/* Large central illustration. */
+.notif-card-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0 0.65rem 0;
+  color: var(--accent);
+  line-height: 0;
+}
+.notif-card-raven .notif-card-art { color: #c69af0; }
+.notif-card-art .card-icon { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)); }
+
+.notif-card-value {
+  text-align: center;
+  font-family: "Georgia", serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+.notif-card-raven .notif-card-value { color: #c69af0; }
+
 .notif-card-body {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   line-height: 1.45;
   color: var(--fg);
   text-align: center;
+  opacity: 0.88;
 }
 .notif-card-meta {
   margin-top: 0.8rem;
@@ -564,6 +637,15 @@ input, select {
   color: var(--muted);
   flex: 1;
   text-align: right;
+}
+
+/* Card art in the hand list. */
+.hand-card-icon {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  line-height: 0;
+  flex-shrink: 0;
 }
 
 /* Toasts: bottom-right stack. */
@@ -615,18 +697,19 @@ input, select {
   40%  { box-shadow: 0 0 26px 4px rgba(212, 175, 55, 0.45); }
   to   { box-shadow: 0 0 10px 0 rgba(212, 175, 55, 0.14); }
 }
-.notif-card-raven { animation-name: notif-card-settle-raven; }
+.is-revealed .notif-card-raven { animation-name: notif-card-settle-raven; }
 @keyframes notif-card-settle-raven {
   from { box-shadow: 0 0 0 0 rgba(160, 107, 207, 0); }
   40%  { box-shadow: 0 0 26px 4px rgba(160, 107, 207, 0.5); }
   to   { box-shadow: 0 0 10px 0 rgba(160, 107, 207, 0.16); }
 }
 
-/* Motion-sensitive players get the card face immediately, no spin. */
+/* Motion-sensitive players still deal the card face-down and still press
+   Reveal — they just get the face immediately instead of a spin. */
 @media (prefers-reduced-motion: reduce) {
-  .notif-card-inner { animation: none; transform: none; }
-  .notif-card-back { display: none; }
-  .notif-card { animation: none; }
+  .notif-card-inner.is-revealed { animation: none; transform: rotateY(0deg); }
+  .is-revealed .notif-card { animation: none; }
+  .notif-card-back { transition: none; }
 }
 
 /* ── Dice display ─────────────────────────────────────────────────────────── */
