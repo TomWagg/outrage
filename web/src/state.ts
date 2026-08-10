@@ -160,7 +160,15 @@ export interface BoardSpace {
 
 export interface BoardData {
   spaces: BoardSpace[];
-  slides: { src: string; to: string; bidirectional?: boolean }[];
+  // NOTE: /api/board serves the raw board.json, so these arrive with the JSON
+  // key names (from_space / to_space), not the Pydantic field aliases.
+  slides: {
+    id?: string;
+    from_space: string;
+    to_space: string;
+    bidirectional?: boolean;
+    path_coords?: [number, number][];
+  }[];
   traversal_edges: { src: string; to: string; requires_card?: string }[];
   start_space: string;
   escape_space: string;

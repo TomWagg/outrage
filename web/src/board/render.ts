@@ -199,6 +199,167 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
   }
   svg.appendChild(regionLayer);
 
+  // Pixel rect for every space — shared by the slide and edge layers below.
+  const rectMap = new Map<string, { x: number; y: number; w: number; h: number }>();
+  for (const sp of board.spaces) {
+    const r = spaceRect(sp, toPx);
+    if (r) rectMap.set(sp.id, r);
+  }
+
+  // --- slides ---
+  // A slide is a tunnel joining two spaces that aren't grid-adjacent; on the
+  // physical board it runs *underneath* the wall walk. We draw it as a rounded
+  // rectangle covering the slide's ``path_coords`` cells with a double-headed
+  // arrow inside, labelled "SLIDE".
+  //
+  // The layer is appended before the space layer so that any square the slide
+  // passes beneath (the Bloody Tower, ww12, ww20) visibly bridges over it. The
+  // label is therefore placed on the longest stretch of the arrow that no
+  // space covers, so it never ends up hidden under a bridging square.
+  const slideTooltips: [string, string][] = [];
+  {
+    const slideLayer = createSVG("g", { "data-layer": "slides" });
+
+    for (const sl of board.slides ?? []) {
+      const coords = (sl.path_coords ?? []) as [number, number][];
+      if (coords.length === 0) continue;
+
+      const srcId = sl.from_space;
+      const dstId = sl.to_space;
+      const rSrc = rectMap.get(srcId);
+      const rDst = rectMap.get(dstId);
+      if (!rSrc || !rDst) continue;
+
+      // ---- the rectangle: bounding box of the path cells ----
+      const xs = coords.map((c) => c[0]);
+      const ys = coords.map((c) => c[1]);
+      const [bx0, by0] = toPx(Math.min(...xs), Math.max(...ys));
+      const box = {
+        x: bx0 + 1,
+        y: by0 + 1,
+        w: (Math.max(...xs) - Math.min(...xs) + 1) * CELL - 2,
+        h: (Math.max(...ys) - Math.min(...ys) + 1) * CELL - 2,
+      };
+
+      const slideId = sl.id ?? `${srcId}__${dstId}`;
+      const bg = createSVG("rect", {
+        x: String(box.x),
+        y: String(box.y),
+        width: String(box.w),
+        height: String(box.h),
+        rx: "5",
+        ry: "5",
+        stroke: "#2f3944",
+        "stroke-width": "1.5",
+        "data-space-id": `slide:${slideId}`,
+      });
+      bg.style.fill = "var(--sq-slide)";
+      slideLayer.appendChild(bg);
+      // Most slide endpoints are plain unlabelled squares, so only name the
+      // ones that actually carry a label (e.g. the Cradle Tower exit).
+      const named = [srcId, dstId].map((id) => spaceLabel(board, id)).filter(Boolean);
+      const dir = sl.bidirectional === false ? "one way" : "in both directions";
+      slideTooltips.push([
+        `slide:${slideId}`,
+        "Slide — a tunnel running under the wall walk.\n" +
+          (named.length === 2
+            ? `Connects ${named[0]} and ${named[1]}, ${dir}.`
+            : named.length === 1
+              ? `Connects to ${named[0]}, ${dir}.`
+              : `Connects the squares at either end, ${dir}.`),
+      ]);
+
+      // ---- the arrow: centres of the path cells, with a stub at each end
+      // reaching the border it shares with the space it connects to ----
+      const centre = (r: { x: number; y: number; w: number; h: number }) => ({
+        x: r.x + r.w / 2,
+        y: r.y + r.h / 2,
+      });
+      const cellCentre = (c: [number, number]) => {
+        const [px, py] = toPx(c[0], c[1]);
+        return { x: px + CELL / 2, y: py + CELL / 2 };
+      };
+      const mid = (a: Pt, b: Pt) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
+
+      const cells = coords.map(cellCentre);
+      const cSrc = centre(rSrc);
+      const cDst = centre(rDst);
+      // path_coords are listed from one endpoint to the other, but which
+      // endpoint sits at coords[0] isn't guaranteed — pick the nearer one.
+      const srcFirst = dist(cells[0], cSrc) <= dist(cells[0], cDst);
+      const head = srcFirst ? cSrc : cDst;
+      const tail = srcFirst ? cDst : cSrc;
+      const pts: Pt[] = [
+        mid(cells[0], head),
+        ...cells,
+        mid(cells[cells.length - 1], tail),
+      ];
+
+      const arrowLayer = createSVG("g", { "pointer-events": "none" });
+      arrowLayer.appendChild(createSVG("polyline", {
+        points: pts.map((p) => `${p.x},${p.y}`).join(" "),
+        fill: "none",
+        stroke: "var(--sq-slide-ink)",
+        "stroke-width": "1.6",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+
+      // Arrowhead at the tail end always; at the head end too when the slide
+      // can be travelled in both directions (all of them, currently).
+      appendArrowhead(arrowLayer, pts[pts.length - 2], pts[pts.length - 1]);
+      if (sl.bidirectional !== false) appendArrowhead(arrowLayer, pts[1], pts[0]);
+
+      // ---- the "SLIDE" label, on the longest uncovered stretch ----
+      const blockers = [...rectMap.entries()]
+        .filter(([id]) => id !== srcId && id !== dstId)
+        .map(([, r]) => r)
+        .filter((r) => r.x < box.x + box.w && r.x + r.w > box.x &&
+                       r.y < box.y + box.h && r.y + r.h > box.y);
+      // Keep clear of both ends so the label pill never sits on an arrowhead.
+      const slot = clearestStretch(pts, blockers, 10);
+      if (slot) {
+        // Shrink the type if the clear stretch is short. "SLIDE" is 5 glyphs
+        // and renders roughly 4.6x the font size wide with the letter-spacing
+        // below, so this keeps the label inside its stretch.
+        const fs = Math.max(5.5, Math.min(8, (slot.length - 8) / 4.6));
+        const labelW = fs * 4.6;
+        const g = createSVG("g", {
+          transform: `translate(${slot.x},${slot.y}) rotate(${slot.angle})`,
+          "pointer-events": "none",
+        });
+        // Pill in the slide's own fill so the arrow shaft doesn't run through
+        // the lettering.
+        const pill = createSVG("rect", {
+          x: String(-labelW / 2 - 3),
+          y: String(-fs / 2 - 2),
+          width: String(labelW + 6),
+          height: String(fs + 4),
+          rx: "2",
+        });
+        pill.style.fill = "var(--sq-slide)";
+        g.appendChild(pill);
+        const t = createSVG("text", {
+          x: "0",
+          y: String(fs * 0.36),
+          "text-anchor": "middle",
+          "font-size": String(fs),
+          "letter-spacing": "0.8",
+          "font-weight": "bold",
+        });
+        t.style.fill = "var(--sq-slide-ink)";
+        t.textContent = "SLIDE";
+        g.appendChild(t);
+        arrowLayer.appendChild(g);
+      }
+
+      slideLayer.appendChild(arrowLayer);
+    }
+
+    svg.appendChild(slideLayer);
+  }
+
   // --- spaces ---
   const spaceLayer = createSVG("g", { "data-layer": "spaces" });
   const NO_CIRCLE_KINDS = new Set(["raven_trigger", "chapel_royal", "chapel_st_john", "museum", "royal_armouries", "hospital", "warder_post", "bench", "rack", "bloody_tower"]);
@@ -307,13 +468,6 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
   //   - otherwise              → diagonal centre-to-centre fallback
   {
     const edgeLayer = createSVG("g", { "data-layer": "edges", "pointer-events": "none" });
-
-    // Pre-compute pixel rect for every space.
-    const rectMap = new Map<string, { x: number; y: number; w: number; h: number }>();
-    for (const sp of board.spaces) {
-      const r = spaceRect(sp, toPx);
-      if (r) rectMap.set(sp.id, r);
-    }
 
     // Visit each undirected edge exactly once.
     const drawn = new Set<string>();
@@ -598,6 +752,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
       tooltipMap.set(sp.id, sp.label);
     }
   }
+  for (const [key, text] of slideTooltips) tooltipMap.set(key, text);
   // Augment warder-post tooltips with occupancy status.
   if (game) {
     const barracksId = board.barracks_space ?? "barracks";
@@ -629,6 +784,96 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
 // ---------- helpers ----------
 
 interface Bounds { minX: number; maxX: number; minY: number; maxY: number; }
+
+interface Pt { x: number; y: number; }
+interface PxRect { x: number; y: number; w: number; h: number; }
+
+/** A space's human label, or "" when it has none (ids are not user-facing). */
+function spaceLabel(board: BoardData, id: string): string {
+  return board.spaces.find((s) => s.id === id)?.label ?? "";
+}
+
+/** Filled triangle at ``tip``, pointing in the ``from`` → ``tip`` direction. */
+function appendArrowhead(parent: SVGElement, from: Pt, tip: Pt): void {
+  const angleDeg = Math.atan2(tip.y - from.y, tip.x - from.x) * (180 / Math.PI);
+  const len = 6, half = 3.4;
+  const head = createSVG("path", {
+    // Built pointing right (+x) about (tip), then rotated into place.
+    d: `M ${tip.x} ${tip.y} L ${tip.x - len} ${tip.y - half} L ${tip.x - len} ${tip.y + half} Z`,
+    transform: `rotate(${angleDeg} ${tip.x} ${tip.y})`,
+  });
+  head.style.fill = "var(--sq-slide-ink)";
+  parent.appendChild(head);
+}
+
+/**
+ * Walk the polyline ``pts`` and return the midpoint of its longest run that
+ * no rect in ``blockers`` covers, along with the local heading (in degrees,
+ * normalised so text never reads upside-down) and the run's pixel length.
+ * ``endClearance`` px at each end of the polyline are treated as covered.
+ *
+ * Used to park the "SLIDE" label where the squares bridging over the slide
+ * won't hide it. Returns null for a degenerate (zero-length) polyline.
+ */
+function clearestStretch(
+  pts: Pt[],
+  blockers: PxRect[],
+  endClearance = 0,
+): { x: number; y: number; angle: number; length: number } | null {
+  const segs: { a: Pt; b: Pt; len: number }[] = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (len > 0) { segs.push({ a: pts[i - 1], b: pts[i], len }); total += len; }
+  }
+  if (total === 0) return null;
+
+  const at = (d: number): { p: Pt; angle: number } => {
+    let rem = Math.min(Math.max(d, 0), total);
+    for (const s of segs) {
+      if (rem <= s.len) {
+        const t = rem / s.len;
+        return {
+          p: { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t },
+          angle: Math.atan2(s.b.y - s.a.y, s.b.x - s.a.x) * (180 / Math.PI),
+        };
+      }
+      rem -= s.len;
+    }
+    const last = segs[segs.length - 1];
+    return {
+      p: last.b,
+      angle: Math.atan2(last.b.y - last.a.y, last.b.x - last.a.x) * (180 / Math.PI),
+    };
+  };
+
+  // A couple of px of slack so the label doesn't crowd a bridging square.
+  const M = 2;
+  const covered = (p: Pt) => blockers.some(
+    (r) => p.x >= r.x - M && p.x <= r.x + r.w + M &&
+           p.y >= r.y - M && p.y <= r.y + r.h + M,
+  );
+
+  const N = 160;
+  let bestStart = 0, bestEnd = -1, runStart = -1;
+  for (let i = 0; i <= N; i++) {
+    const d = (i / N) * total;
+    if (d >= endClearance && d <= total - endClearance && !covered(at(d).p)) {
+      if (runStart < 0) runStart = i;
+      if (i - runStart > bestEnd - bestStart) { bestStart = runStart; bestEnd = i; }
+    } else {
+      runStart = -1;
+    }
+  }
+  // Fully covered: fall back to the polyline's midpoint rather than dropping
+  // the label entirely.
+  if (bestEnd < bestStart) { bestStart = 0; bestEnd = N; }
+
+  const dMid = ((bestStart + bestEnd) / 2 / N) * total;
+  const { p, angle } = at(dMid);
+  const norm = angle > 90 ? angle - 180 : angle < -90 ? angle + 180 : angle;
+  return { x: p.x, y: p.y, angle: norm, length: ((bestEnd - bestStart) / N) * total };
+}
 
 function computeBounds(board: BoardData): Bounds {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

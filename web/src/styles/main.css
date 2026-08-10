@@ -39,6 +39,8 @@
   --sq-barracks:       #c0c0c0;
   --sq-warder-post:    #901515;
   --sq-jewel:          #ec7063;
+  --sq-slide:          #9aa7b4;   /* slide tunnels (under the wall walk)  */
+  --sq-slide-ink:      #1b2733;   /* slide arrow + "SLIDE" lettering      */
   --sq-fallback:       #888888;
 }
 
