@@ -35,6 +35,7 @@ from .state import (
     GameState,
     LogEntry,
     JewelId,
+    PendingCardChange,
     PendingJewelAttempt,
     PendingMove,
     PendingRavenEffect,
@@ -342,8 +343,31 @@ def _commit_move(state: GameState, board: Board, player: PlayerState, dest: str,
     return evs
 
 
-def _resolve_landing(state: GameState, board: Board, player: PlayerState) -> list[dict[str, Any]]:
-    """Trigger landing effects for the current space, updating the phase."""
+def resolve_landing_after_summons(
+    state: GameState, board: Board, player: PlayerState,
+) -> list[dict[str, Any]]:
+    """Landing resolution for a player a card effect has just summoned.
+
+    Public because ``cards_effects`` calls it (via a deferred import) from
+    ``_summon_to``. The raven draw is suppressed: being summoned onto a raven
+    square must not draw a second raven card while the first is still resolving.
+    """
+    return _resolve_landing(state, board, player, depth=1, allow_raven=False)
+
+
+def _resolve_landing(
+    state: GameState,
+    board: Board,
+    player: PlayerState,
+    depth: int = 0,
+    allow_raven: bool = True,
+) -> list[dict[str, Any]]:
+    """Trigger landing effects for the current space, updating the phase.
+
+    ``depth`` counts teleports chained by space actions (land on "Go to Shop",
+    resolve the Shop, ...). It guards against a board topology that could send
+    a player round a cycle of teleporting squares forever.
+    """
     evs: list[dict[str, Any]] = []
     space = board.space(player.position)
     rules_cfg = board.data.rules
@@ -363,6 +387,28 @@ def _resolve_landing(state: GameState, board: Board, player: PlayerState) -> lis
             state.coins_available -= 1
             evs.append(_ev("coin_picked_up", player=player.username))
 
+    # Rack sender (wt_13_11): straight to the Rack, no roll, no appeal.
+    if space.kind == "rack_sender":
+        from .cards_effects import send_to_rack as _send_to_rack
+        evs.append(_ev("rack_sender_triggered", player=player.username, space=space.id))
+        evs.extend(_send_to_rack(state, player, board))
+        state.phase = Phase.TURN_END
+        return evs
+
+    # Squares that simply cost you your next turn: the benches, the Hospital,
+    # and the Shop (browsing takes a while). Driven by the board so the data
+    # stays authoritative — see ``miss_turn_on_landing_kinds``.
+    miss_kinds = set(getattr(rules_cfg, "miss_turn_on_landing_kinds", []) or [])
+    if space.kind in miss_kinds:
+        player.miss_next_turn = True
+        # NB: ``kind`` is _ev's positional event-name parameter — the payload
+        # key for the space kind has to be called something else.
+        evs.append(_ev(
+            "miss_turn_on_landing" if space.kind != "bench" else "resting_on_bench",
+            player=player.username, space=space.id, space_kind=space.kind,
+            label=space.label or None,
+        ))
+
     # Jewel space (unclaimed): enter attempt phase.
     if space.kind == "jewel":
         jewel = state.jewel_at_space(space.id)
@@ -378,9 +424,25 @@ def _resolve_landing(state: GameState, board: Board, player: PlayerState) -> lis
         evs.append(_ev("trying_accreditation", player=player.username))
 
     # Raven trigger.
-    if space.kind == "raven_trigger":
+    if space.kind == "raven_trigger" and allow_raven:
         evs.extend(_draw_raven_and_resolve(state, board, player))
         if state.phase == Phase.RAVEN_EFFECT:
+            return evs
+        # Non-interactive effects auto-resolve inside the draw above and leave
+        # the phase at MOVING. ``go_to_jewel_view`` queues an immediate theft
+        # attempt that way, so honour it here — otherwise the tail of this
+        # function would force MOVING → TURN_END and silently drop it. (The
+        # interactive path does the same check in _intent_resolve_raven_effect.)
+        if state.turn.pending_jewel is not None:
+            state.phase = Phase.JEWEL_ATTEMPT
+            return evs
+        if player.position != space.id:
+            # The card moved the player. Their destination has already had its
+            # own landing resolved (or, for punishment cards, deliberately
+            # hasn't) — either way, don't go on applying *this* square's
+            # effects to someone who is no longer standing on it.
+            if state.phase == Phase.MOVING:
+                state.phase = Phase.TURN_END
             return evs
 
     # Tower-card-on-landing: consult the board rules for which kinds trigger,
@@ -398,7 +460,7 @@ def _resolve_landing(state: GameState, board: Board, player: PlayerState) -> lis
     # surrender_weapons). These fire *after* the generic card draw so e.g.
     # ww29_broad_arrow (excluded above) can still run its surrender action.
     if space.action is not None:
-        action_evs, handled_terminal = _dispatch_space_action(state, board, player, space)
+        action_evs, handled_terminal = _dispatch_space_action(state, board, player, space, depth)
         evs.extend(action_evs)
         if handled_terminal:
             return evs
@@ -472,8 +534,32 @@ def _draw_tower(state: GameState) -> Optional[Card]:
 # =========================================================================
 
 
+# A space action that teleports resolves the destination's own landing, which
+# may teleport again. Real boards don't cycle, but a data edit could — bail out
+# rather than blowing the stack.
+_MAX_LANDING_DEPTH = 4
+
+
+def _action_destination(board: Board, params: dict[str, Any]) -> Optional[str]:
+    """Destination for a teleporting space action.
+
+    Accepts either an explicit ``space_id`` or a ``destination_kind`` naming one
+    of the board's ``<kind>_space`` anchors (``queens_house`` → the board's
+    ``queens_house_space``, ``shop`` → ``shop_space``, ...).
+    """
+    sid = params.get("space_id")
+    if sid and board.has_space(sid):
+        return sid
+    kind = params.get("destination_kind")
+    if kind:
+        anchor = getattr(board.data, f"{kind}_space", None)
+        if anchor and board.has_space(anchor):
+            return anchor
+    return None
+
+
 def _dispatch_space_action(
-    state: GameState, board: Board, player: PlayerState, space
+    state: GameState, board: Board, player: PlayerState, space, depth: int = 0,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Run the per-space ``action`` handler for the just-landed space.
 
@@ -543,6 +629,86 @@ def _dispatch_space_action(
             return evs, True
         return evs, False
 
+    if key in ("go_to", "go_to_and_miss_turn"):
+        # "Go to Queen's House" / "Go to Shop" / "Go to Broad Arrow Tower", and
+        # ww04_guidebook which also costs the player their next turn.
+        dest = _action_destination(board, params)
+        if dest is None:
+            evs.append(_ev(
+                "space_action_failed", space=space.id, key=key,
+                reason="unresolved_destination",
+            ))
+            return evs, False
+        if key == "go_to_and_miss_turn":
+            player.miss_next_turn = True
+        if depth >= _MAX_LANDING_DEPTH:
+            evs.append(_ev("landing_chain_truncated", space=space.id, key=key))
+            state.phase = Phase.TURN_END
+            return evs, True
+        old = player.position
+        player.position = dest
+        if dest not in state.turn.visited_this_turn:
+            state.turn.visited_this_turn.append(dest)
+        evs.append(_ev(
+            "sent_to_space", player=player.username, src=old, dst=dest,
+            space=space.id, label=space.label or None,
+            misses_turn=(key == "go_to_and_miss_turn"),
+        ))
+        # Resolve the destination's own landing effects — the Shop and Queen's
+        # House both do something on arrival.
+        evs.extend(_resolve_landing(state, board, player, depth=depth + 1))
+        return evs, True
+
+    if key == "change_card":
+        # ww41 / ww58 / ww69: discard one card from hand, draw the top of the
+        # tower deck. The player picks the discard, so park a prompt.
+        if not player.hand:
+            drew = _draw_tower(state)
+            if drew is not None:
+                player.add_card(drew)
+                evs.append(_ev("tower_card_drawn", player=player.username, card=drew.id))
+            evs.append(_ev(
+                "card_change_skipped", player=player.username,
+                space=space.id, reason="empty_hand",
+            ))
+            return evs, False
+        state.turn.pending_card_change = PendingCardChange(kind="change", space_id=space.id)
+        state.phase = Phase.CARD_CHANGE
+        evs.append(_ev("card_change_offered", player=player.username, space=space.id))
+        return evs, True
+
+    if key == "swap_random_with_other_player":
+        # ww75: give a card of your choosing to an opponent of your choosing,
+        # and take a random one from their hand in exchange.
+        candidates = [
+            p.username for p in state.players
+            if p.username != player.username and not p.escaped and p.hand
+        ]
+        if not player.hand or not candidates:
+            evs.append(_ev(
+                "card_swap_skipped", player=player.username, space=space.id,
+                reason="empty_hand" if not player.hand else "no_eligible_opponent",
+            ))
+            return evs, False
+        state.turn.pending_card_change = PendingCardChange(
+            kind="swap", space_id=space.id, candidates=candidates,
+        )
+        state.phase = Phase.CARD_CHANGE
+        evs.append(_ev(
+            "card_swap_offered", player=player.username,
+            space=space.id, candidates=candidates,
+        ))
+        return evs, True
+
+    if key == "miss_turn":
+        # ww21_miss, ww28_miss, and ww60_questioned ("Questioned by a guard").
+        player.miss_next_turn = True
+        evs.append(_ev(
+            "miss_turn_queued", player=player.username,
+            space=space.id, label=space.label or None,
+        ))
+        return evs, False
+
     if key == "surrender_weapons":
         # ww29_broad_arrow: player discards every weapon card in hand.
         surrendered: list[str] = []
@@ -553,6 +719,7 @@ def _dispatch_space_action(
                 surrendered.append(c.id)
         evs.append(_ev(
             "weapons_surrendered", player=player.username, cards=surrendered,
+            count=len(surrendered), space=space.id,
         ))
         return evs, False
 
@@ -962,11 +1129,25 @@ def _intent_play_combat_special(state, payload, *, board, rng):
     card = next((c for c in defender.hand if c.id == card_id), None)
     if card is None:
         raise RuleError(f"Defender has no card {card_id}")
-    combat = combat_mod.play_defender_special(state, card_id, board.data.chapel_royal_space, rng)
+    # Sanctuary burns both players' committed cards and replaces them, so the
+    # special needs the tower deck.
+    tower_deck = _deck_view(state, "tower")
+    attacker_committed = len(state.combat.attacker_cards)
+    defender_committed = len(state.combat.defender_cards)
+    combat = combat_mod.play_defender_special(
+        state, card_id, board.data.chapel_royal_space, rng, tower_deck,
+    )
+    _sync_deck(state, "tower", tower_deck)
     # Discard the special card.
     state.tower_discard.append(card)
     evs = [_ev("combat_special", player=username, card=card.name)]
     if combat.sanctuary_cancelled:
+        evs.append(_ev(
+            "sanctuary_taken",
+            defender=combat.defender, attacker=combat.attacker,
+            attacker_cards_lost=attacker_committed,
+            defender_cards_lost=defender_committed,
+        ))
         state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs
@@ -975,6 +1156,22 @@ def _intent_play_combat_special(state, payload, *, board, rng):
 def _intent_reveal_combat(state, payload, *, board, rng):
     _require_phase(state, Phase.COMBAT)
     combat = combat_mod.reveal(state)
+    # Snapshot everything the resolution consumes, so the event can narrate the
+    # whole outcome — totals, spoils and all — rather than just naming a winner.
+    atk_total = sum(c.value for c in combat.attacker_cards)
+    def_total = sum(c.value for c in combat.defender_cards)
+    loser_name = combat.defender if combat.winner == combat.attacker else combat.attacker
+    loser_state = state.player(loser_name)
+    winner_state = state.player(combat.winner)
+    jewels_taken = list(loser_state.jewels)
+    coin_taken = loser_state.has_coin
+    winner_had_coin = winner_state.has_coin
+    winner_plays = (
+        combat.attacker_cards if combat.winner == combat.attacker
+        else combat.defender_cards
+    )
+    cards_drawn = len(winner_plays)
+
     # Auto-resolve right away — there are no more decisions to make.
     tower_deck = _deck_view(state, "tower")
     combat_mod.resolve(
@@ -985,8 +1182,22 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         rng=rng,
     )
     _sync_deck(state, "tower", tower_deck)
-    loser = combat.defender if combat.winner == combat.attacker else combat.attacker
-    evs = [_ev("combat_resolved", winner=combat.winner, loser=loser)]
+    evs = [_ev(
+        "combat_resolved",
+        winner=combat.winner,
+        loser=loser_name,
+        attacker=combat.attacker,
+        defender=combat.defender,
+        attacker_total=atk_total,
+        defender_total=def_total,
+        tie=atk_total == def_total,
+        jewels_taken=jewels_taken,
+        coin_taken=coin_taken,
+        # A second coin can't be held, so it goes back to Devereux.
+        coin_overflowed=coin_taken and winner_had_coin,
+        cards_drawn=cards_drawn,
+        loser_sent_to=board.data.hospital_space,
+    )]
     state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs
@@ -1013,12 +1224,22 @@ def _sync_deck(state: GameState, which: str, deck: Deck) -> None:
 
 
 def _intent_attempt_jewel(state, payload, *, board, rng):
-    _require_phase(state, Phase.JEWEL_ATTEMPT)
+    # TURN_START / PRE_ROLL are allowed for the re-attempt: a failed thief stays
+    # standing on the jewel, so on their next turn they may either try again or
+    # simply roll and walk away. The choice is theirs, so we don't force the
+    # JEWEL_ATTEMPT phase on them at turn start.
+    _require_phase(state, Phase.JEWEL_ATTEMPT, Phase.TURN_START, Phase.PRE_ROLL)
     username = payload["username"]
     player = _require_current_player(state, username)
     pj = state.turn.pending_jewel
     if pj is None:
-        raise RuleError("No pending jewel attempt")
+        standing_on = state.jewel_at_space(player.position)
+        if standing_on is None:
+            raise RuleError("No pending jewel attempt")
+        pj = PendingJewelAttempt(
+            jewel_id=standing_on, space_id=player.position, source="landing",
+        )
+        state.turn.pending_jewel = pj
     # Optional subset of burglary tool card ids to play.
     tool_ids: list[str] = list(payload.get("tool_card_ids") or [])
     tools: list[Card] = []
@@ -1031,12 +1252,8 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
     roll = rng.roll_dice(2)
     threshold = 12 - total_val
     success = sum(roll) >= threshold
-    # On success the burglary cards are spent (→ tower_discard). On failure
-    # they're kept in the player's hand for another attempt later.
-    if success:
-        for c in tools:
-            player.remove_card(c.id)
-            state.tower_discard.append(c)
+    # Burglary tools are always re-usable — they stay in hand whether the
+    # attempt succeeds or fails.
     evs: list[dict[str, Any]] = [_ev(
         "jewel_attempt",
         player=player.username,
@@ -1050,7 +1267,75 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
         state.jewels_available.pop(pj.jewel_id, None)
         player.jewels.append(pj.jewel_id)
         evs.append(_ev("jewel_acquired", player=player.username, jewel=pj.jewel_id))
+    else:
+        # Failure costs the turn, not the chance: the thief stays put and can
+        # try again next turn (see _offer_standing_jewel_attempt).
+        evs.append(_ev(
+            "jewel_attempt_retry_available",
+            player=player.username, jewel=pj.jewel_id, space=pj.space_id,
+        ))
     state.turn.pending_jewel = None
+    state.phase = Phase.TURN_END
+    _log(state, evs)
+    return state, evs
+
+
+
+
+# =========================================================================
+# Change a card / swap a card (the ww41/58/69 and ww75 prompts)
+# =========================================================================
+
+
+def _intent_change_card(state, payload, *, board, rng):
+    """Resolve the prompt parked by a ``change_card`` / swap square.
+
+    Payload: ``card_id`` (the card being given up) and, for a swap, ``target``
+    (the opponent to trade with).
+    """
+    _require_phase(state, Phase.CARD_CHANGE)
+    username = payload["username"]
+    player = _require_current_player(state, username)
+    pending = state.turn.pending_card_change
+    if pending is None:
+        raise RuleError("No pending card change")
+
+    card_id = payload.get("card_id")
+    given = next((c for c in player.hand if c.id == card_id), None)
+    if given is None:
+        raise RuleError(f"Card not in hand: {card_id}")
+
+    evs: list[dict[str, Any]] = []
+    if pending.kind == "swap":
+        target_name = payload.get("target")
+        if target_name not in pending.candidates:
+            raise RuleError(f"Not a valid swap target: {target_name}")
+        target = state.player(target_name)
+        if not target.hand:
+            raise RuleError(f"{target_name} has no cards to swap")
+        # They choose what they give; what comes back is pot luck.
+        received = target.hand[rng.randint(0, len(target.hand) - 1)]
+        player.remove_card(given.id)
+        target.remove_card(received.id)
+        player.add_card(received)
+        target.add_card(given)
+        evs.append(_ev(
+            "card_swapped", player=player.username, target=target_name,
+            given=given.id, received=received.id, space=pending.space_id,
+        ))
+    else:
+        player.remove_card(given.id)
+        state.tower_discard.append(given)
+        drew = _draw_tower(state)
+        if drew is not None:
+            player.add_card(drew)
+        evs.append(_ev(
+            "card_changed", player=player.username,
+            discarded=given.id, drawn=drew.id if drew else None,
+            space=pending.space_id,
+        ))
+
+    state.turn.pending_card_change = None
     state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs
@@ -1118,6 +1403,22 @@ def _intent_end_turn(state, payload, *, board, rng):
                 ev = _ev("missed_turn", player=ender.username)
                 _log(state, [ev])
                 # Fall through to normal end_turn advance by continuing.
+            elif state.phase == Phase.TURN_START and ender.status in (
+                Status.RACKED, Status.IMPRISONED, Status.TORTURED,
+            ):
+                # Confinement counts down per turn taken, and _intent_roll_dice
+                # is what normally ticks it. A confined player who ends their
+                # turn without rolling still burns the turn — otherwise they can
+                # sit on the Rack forever by never pressing Roll.
+                ender.status_turns_remaining = max(0, ender.status_turns_remaining - 1)
+                if ender.status_turns_remaining == 0:
+                    was_racked = ender.status == Status.RACKED
+                    ender.status = Status.NORMAL
+                    ev = _ev(
+                        "rack_expired" if was_racked else "confinement_expired",
+                        player=ender.username,
+                    )
+                    _log(state, [ev])
         except KeyError:
             pass
     # Extra turns queued by Tower Pass / Clerk's Tea / etc.
@@ -1317,6 +1618,7 @@ _INTENTS: dict[str, Any] = {
     "play_combat_special": _intent_play_combat_special,
     "reveal_combat": _intent_reveal_combat,
     "attempt_jewel": _intent_attempt_jewel,
+    "change_card": _intent_change_card,
     "attempt_accreditation": _intent_attempt_accreditation,
     "resolve_raven_effect": _intent_resolve_raven_effect,
     "dismiss_raven_notice": _intent_dismiss_raven_notice,

@@ -3883,7 +3883,8 @@
     "tower_card_draw_kinds": [
       "tower",
       "devereux",
-      "museum"
+      "museum",
+      "royal_armouries"
     ],
     "tower_card_draw_exception_space_ids": [
       "ww29_broad_arrow"
@@ -3898,6 +3899,11 @@
     "warders_start_in_posts": true,
     "secret_passage_movement_cost": 1,
     "exterior_south_forward_only": false,
-    "no_revisit_during_turn": true
+    "no_revisit_during_turn": true,
+    "miss_turn_on_landing_kinds": [
+      "bench",
+      "hospital",
+      "shop"
+    ]
   }
 }

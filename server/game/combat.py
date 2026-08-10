@@ -108,12 +108,20 @@ def set_defender_cards(state: GameState, card_ids: list[str]) -> Combat:
     return combat
 
 
-def play_defender_special(state: GameState, card_id: str, chapel_royal_space: str, rng: Rng) -> Combat:
+def play_defender_special(
+    state: GameState,
+    card_id: str,
+    chapel_royal_space: str,
+    rng: Rng,
+    tower_deck: Optional[Deck] = None,
+) -> Combat:
     """Apply ``Sanctuary`` or ``Mass Accretor`` to the current combat.
 
     - ``Sanctuary`` (utility): defender teleports to Chapel Royal; combat is
-      cancelled. The card is moved to the tower discard. Committed weapons
-      return to each owner's hand (they weren't "used").
+      cancelled. The card is moved to the tower discard. Both players lose the
+      cards they committed and draw that many replacements — the weapons were
+      spent even though the fight never happened. (``tower_deck`` is required
+      for this; without it the cards are discarded and not replaced.)
     - ``Mass Accretor`` (custom): steal one random weapon from the attacker's
       committed pile into the defender's hand.
     """
@@ -128,15 +136,25 @@ def play_defender_special(state: GameState, card_id: str, chapel_royal_space: st
         defender.position = chapel_royal_space
         combat.sanctuary_cancelled = True
         combat.phase = "resolved"
-        # Return weapons to their owners — combat did not happen.
         attacker = state.player(combat.attacker)
-        for c in combat.attacker_cards:
-            attacker.add_card(c)
-        for c in combat.defender_cards:
-            defender.add_card(c)
+        for player, committed in (
+            (attacker, combat.attacker_cards), (defender, combat.defender_cards),
+        ):
+            for c in committed:
+                if tower_deck is not None:
+                    tower_deck.discard(c)
+            if tower_deck is not None:
+                for _ in committed:
+                    drew = tower_deck.draw(rng)
+                    if drew is None:
+                        break
+                    player.add_card(drew)
+        combat.resolved_events.append(
+            f"sanctuary:atk_lost={len(combat.attacker_cards)},"
+            f"def_lost={len(combat.defender_cards)}"
+        )
         combat.attacker_cards = []
         combat.defender_cards = []
-        combat.resolved_events.append("sanctuary")
         return combat
     if card.effect_key == "mass_accretor":
         if not combat.attacker_cards:

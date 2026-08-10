@@ -181,7 +181,29 @@ export function mountNotifications(
       pushToast(`Combat: ${p.attacker} attacks ${p.defender}.`, "info");
   });
   ws.on("combat_resolved", (p: any) => {
-    if (p?.winner) pushToast(`Combat won by ${p.winner}.`, "good");
+    if (!p?.winner) return;
+    const jewels = Array.isArray(p.jewels_taken) ? p.jewels_taken.length : 0;
+    const spoils: string[] = [];
+    if (jewels) spoils.push(`${jewels} jewel${jewels === 1 ? "" : "s"}`);
+    if (p.coin_taken) spoils.push("a coin");
+    pushToast(
+      `${p.attacker ?? "?"} ${p.attacker_total ?? 0} vs ${p.defender ?? "?"} ${p.defender_total ?? 0}` +
+        ` — ${p.winner} wins!` +
+        (spoils.length ? ` Takes ${spoils.join(" and ")} from ${p.loser}.` : "") +
+        ` ${p.loser} goes to the Hospital.`,
+      "good",
+      TOAST_LONG_TTL,
+    );
+  });
+  ws.on("sanctuary_taken", (p: any) => {
+    if (!p?.defender) return;
+    pushToast(
+      `${p.defender} flees to Sanctuary! Weapons spent all the same — ` +
+        `${p.attacker} loses ${p.attacker_cards_lost ?? 0}, ` +
+        `${p.defender} loses ${p.defender_cards_lost ?? 0}. Both redraw.`,
+      "info",
+      TOAST_LONG_TTL,
+    );
   });
 
   ws.on("firecrackers", (p: any) => {
@@ -220,6 +242,20 @@ export function mountNotifications(
   ws.on("beauchamp_imprisonment", (p: any) => {
     if (p?.player) pushToast(`${p.player} imprisoned in Beauchamp Tower.`, "bad");
   });
+  ws.on("rack_sender_triggered", (p: any) => {
+    if (p?.player)
+      pushToast(`${p.player} is dragged off to the Rack!`, "bad", TOAST_LONG_TTL);
+  });
+  ws.on("resting_on_bench", (p: any) => {
+    if (p?.player) pushToast(`${p.player} rests on a bench — misses a turn.`, "info");
+  });
+  ws.on("miss_turn_on_landing", (p: any) => {
+    if (p?.player)
+      pushToast(`${p.player} stops at the ${p.label ?? "square"} — misses a turn.`, "info");
+  });
+  ws.on("rack_expired", (p: any) => {
+    if (p?.player) pushToast(`${p.player} is released from the Rack.`, "good");
+  });
   ws.on("rack_coin_lost", (p: any) => {
     if (p?.player) pushToast(`${p.player} forfeited a coin on the Rack.`, "bad");
   });
@@ -256,6 +292,41 @@ export function mountNotifications(
   ws.on("three_doubles_bloody_tower", (p: any) => {
     if (p?.player) pushToast(`${p.player} rolled three doubles — off to the Bloody Tower.`, "bad");
   });
+  ws.on("weapons_surrendered", (p: any) => {
+    const n = p?.count ?? (p?.cards ?? []).length;
+    if (p?.player && n > 0)
+      pushToast(
+        `${p.player} surrendered ${n} weapon${n === 1 ? "" : "s"} at the Broad Arrow Tower.`,
+        "bad",
+      );
+  });
+  ws.on("card_swapped", (p: any) => {
+    if (p?.player && p?.target)
+      pushToast(`${p.player} swapped a card with ${p.target}.`, "info");
+  });
+  ws.on("sent_to_space", (p: any) => {
+    if (!p?.player) return;
+    const why = p.label ? `${p.label}: ` : "";
+    pushToast(
+      `${why}${p.player} is marched off to ${p.dst}` +
+        (p.misses_turn ? " — and misses a turn." : "."),
+      p.misses_turn ? "bad" : "info",
+    );
+  });
+  ws.on("miss_turn_queued", (p: any) => {
+    if (p?.player)
+      pushToast(`${p.label ?? "Miss a turn"} — ${p.player} loses their next turn.`, "bad");
+  });
+  // Development aid: the engine emits this for any space ``action.key`` it has
+  // no handler for. Without a toast an unimplemented action looks exactly like
+  // a square that does nothing, which is how several gaps went unnoticed.
+  ws.on("unhandled_space_action", (p: any) => {
+    pushToast(
+      `Unimplemented space action "${p?.key ?? "?"}" on ${p?.space ?? "?"}.`,
+      "bad",
+      TOAST_LONG_TTL,
+    );
+  });
 
   // Re-render modal whenever ws sends a snapshot (raven notice may have
   // appeared/cleared) or whenever the WS state changes.
@@ -279,6 +350,29 @@ export function mountNotifications(
 
 // ---- Modal builders --------------------------------------------------------
 
+/**
+ * Wrap a card face in the flip scaffolding so it lands face-down and turns
+ * over to reveal itself, the way you'd actually deal it at the table.
+ *
+ * The flip is pure CSS (a delayed keyframe on ``.notif-card-inner``), so there
+ * is no JS timer to leak if the modal is dismissed mid-animation.
+ */
+function flipCard(faceHtml: string, flavor: "tower" | "raven"): string {
+  const crest = flavor === "raven" ? "🐦‍⬛" : "⚜";
+  const backLabel = flavor === "raven" ? "Raven" : "Tower";
+  return `
+    <div class="notif-card-flip">
+      <div class="notif-card-inner">
+        <div class="notif-card-back notif-card-back-${flavor}" aria-hidden="true">
+          <div class="notif-card-crest">${crest}</div>
+          <div class="notif-card-back-label">${backLabel}</div>
+        </div>
+        ${faceHtml}
+      </div>
+    </div>
+  `;
+}
+
 function renderRavenModal(
   notice: RavenNotice,
   ws: WsClient,
@@ -290,11 +384,13 @@ function renderRavenModal(
   wrap.innerHTML = `
     <div class="notif-modal notif-modal-raven" role="dialog" aria-modal="true">
       <div class="notif-modal-header">Raven card triggered</div>
-      <div class="notif-card notif-card-raven">
-        <h3 class="notif-card-title">${escapeHtml(copy.title)}</h3>
-        <p class="notif-card-body">${escapeHtml(copy.description)}</p>
-        <div class="notif-card-meta">Drawn by ${escapeHtml(notice.drawer)}</div>
-      </div>
+      ${flipCard(`
+        <div class="notif-card notif-card-raven">
+          <h3 class="notif-card-title">${escapeHtml(copy.title)}</h3>
+          <p class="notif-card-body">${escapeHtml(copy.description)}</p>
+          <div class="notif-card-meta">Drawn by ${escapeHtml(notice.drawer)}</div>
+        </div>
+      `, "raven")}
       <div class="notif-modal-foot">
         <button class="notif-dismiss" data-action="dismiss">Dismiss for everyone</button>
         <span class="notif-modal-hint">${
@@ -320,10 +416,12 @@ function renderTowerModal(modal: TowerModal, onDismiss: () => void): HTMLElement
   wrap.innerHTML = `
     <div class="notif-modal notif-modal-tower" role="dialog" aria-modal="true">
       <div class="notif-modal-header">Tower card acquired!</div>
-      <div class="notif-card notif-card-tower">
-        <h3 class="notif-card-title">${escapeHtml(copy.title)}</h3>
-        <p class="notif-card-body">${escapeHtml(copy.description)}</p>
-      </div>
+      ${flipCard(`
+        <div class="notif-card notif-card-tower">
+          <h3 class="notif-card-title">${escapeHtml(copy.title)}</h3>
+          <p class="notif-card-body">${escapeHtml(copy.description)}</p>
+        </div>
+      `, "tower")}
       <div class="notif-modal-foot">
         <button class="notif-dismiss" data-action="dismiss">Dismiss</button>
       </div>

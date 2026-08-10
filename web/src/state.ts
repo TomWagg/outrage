@@ -108,6 +108,15 @@ export interface RavenNotice {
   params: Record<string, unknown>;
 }
 
+export interface PendingCardChange {
+  /** "change" = discard one, draw the top of the tower deck (ww41/58/69).
+   *  "swap"   = give a chosen card to a chosen opponent, get a random one back. */
+  kind: "change" | "swap";
+  space_id: string;
+  /** Opponents eligible for a swap; empty for a plain change. */
+  candidates: string[];
+}
+
 export interface TurnContext {
   roll: number[];
   consecutive_doubles: number;
@@ -118,6 +127,7 @@ export interface TurnContext {
   pending_raven: PendingRavenEffect | null;
   pending_jewel: Record<string, unknown> | null;
   pending_split: Record<string, unknown> | null;
+  pending_card_change: PendingCardChange | null;
   binary_disruption_armed?: boolean;
 }
 

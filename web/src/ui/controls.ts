@@ -128,6 +128,20 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           `<strong>Even total</strong> → clerks send you away; turn ends.`;
         pending.appendChild(tip);
       }
+      // A failed theft leaves you standing on the jewel — offer another go
+      // before you roll and walk away.
+      if (me && standingJewel(g, me)) {
+        row.appendChild(
+          button("Attempt the jewel again", () =>
+            ws.send("attempt_jewel", {
+              username: you,
+              tool_card_ids: (me.hand ?? [])
+                .filter((c) => c.category === "burglary")
+                .map((c) => c.id),
+            }).catch(noop),
+          ),
+        );
+      }
       renderPreRollCardButtons(pending, g, me, you, state, ws);
       break;
 
@@ -171,7 +185,12 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     case "JEWEL_ATTEMPT": {
       // Offer a simple "attempt with all burglary tools" button for the skeleton.
       const tools = (me?.hand ?? []).filter((c) => c.category === "burglary");
-      pending.textContent = `Jewel attempt: ${tools.length} burglary tool(s) available (total +${tools.reduce((a, c) => a + (c.value ?? 0), 0)}).`;
+      const bonus = tools.reduce((a, c) => a + (c.value ?? 0), 0);
+      pending.innerHTML =
+        `<div>Jewel attempt: ${tools.length} burglary tool(s) available (total +${bonus}).</div>` +
+        `<div style="margin-top:0.25rem">Roll ${Math.max(2, 12 - bonus)}+ on two dice. ` +
+        `Tools are never used up, and a failed attempt leaves you on the jewel — ` +
+        `you can try again next turn.</div>`;
       row.appendChild(
         button("Attempt with all tools", () =>
           ws.send("attempt_jewel", { username: you, tool_card_ids: tools.map((c) => c.id) }).catch(noop),
@@ -182,6 +201,11 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           ws.send("attempt_jewel", { username: you, tool_card_ids: [] }).catch(noop),
         ),
       );
+      break;
+    }
+
+    case "CARD_CHANGE": {
+      renderCardChange(pending, row, g, me, you, ws);
       break;
     }
 
@@ -197,6 +221,76 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     case "TURN_END":
       row.appendChild(button("End turn", () => ws.send("end_turn", { username: you }).catch(noop)));
       break;
+  }
+}
+
+/**
+ * The unclaimed jewel the player is currently standing on, if any.
+ *
+ * ``jewels_available`` maps jewel id → the space it sits on, so a match means
+ * the jewel is still there to be stolen.
+ */
+function standingJewel(
+  g: import("../state.js").GameSnapshot,
+  me: import("../state.js").GamePlayer,
+): string | null {
+  for (const [jewelId, spaceId] of Object.entries(g.jewels_available ?? {})) {
+    if (spaceId === me.position) return jewelId;
+  }
+  return null;
+}
+
+/**
+ * Prompt for the "Change a card" squares and for ww75's swap.
+ *
+ * Both use the same pending state: the player picks a card to give up. A swap
+ * additionally picks the opponent to trade with — what comes back is random,
+ * so there's nothing else to choose.
+ */
+function renderCardChange(
+  pending: HTMLElement,
+  row: HTMLElement,
+  g: import("../state.js").GameSnapshot,
+  me: import("../state.js").GamePlayer | null,
+  you: string | null,
+  ws: WsClient,
+): void {
+  const pcc = g.turn.pending_card_change;
+  if (!pcc) return;
+  const isSwap = pcc.kind === "swap";
+  const hand = me?.hand ?? [];
+
+  if (currentTurnUsername(g) !== you) {
+    pending.textContent = isSwap
+      ? `Waiting for ${currentTurnUsername(g) ?? "them"} to choose a card to swap…`
+      : `Waiting for ${currentTurnUsername(g) ?? "them"} to change a card…`;
+    return;
+  }
+
+  const targetPicker = isSwap
+    ? `<label style="display:block;margin-top:0.4rem">Swap with:
+         <select id="cc-target" style="margin-left:0.25rem">
+           ${pcc.candidates.map((c) => `<option value="${c}">${c}</option>`).join("")}
+         </select>
+       </label>`
+    : "";
+  pending.innerHTML =
+    (isSwap
+      ? `<div>Give a card to another player — you'll get a <strong>random</strong> one back.</div>`
+      : `<div>Discard a card and draw the top of the tower deck.</div>`) +
+    targetPicker;
+
+  const targetSel = pending.querySelector<HTMLSelectElement>("#cc-target");
+  for (const c of hand) {
+    row.appendChild(
+      button(`${isSwap ? "Give" : "Discard"} ${c.name}`, () =>
+        ws.send("change_card", {
+          username: you,
+          card_id: c.id,
+          ...(isSwap ? { target: targetSel?.value } : {}),
+        }).catch(noop),
+      ),
+    );
   }
 }
 

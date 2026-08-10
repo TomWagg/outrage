@@ -131,10 +131,46 @@ input, select {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 1rem;
-  /* SVG fills this container via width:100%/height:auto; no flex centering
-     needed since the SVG is always full-width within the padding box. */
+  padding: 0.6rem;
+  /* Definite height (matching the sidebar) so the board never pushes the page
+     into scrolling — the viewport inside scrolls instead when zoomed in. */
+  height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
 }
+
+.board-zoombar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+.board-zoombar button {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  min-width: 2rem;
+}
+.board-zoombar button:disabled { opacity: 0.4; cursor: default; }
+.board-zoom-level {
+  font-size: 0.78rem;
+  color: var(--muted);
+  min-width: 3.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scroll container. At zoom 1 the canvas exactly fills it and the SVG's
+   preserveAspectRatio letterboxes the board to fit, so nothing scrolls. */
+.board-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 8px;
+}
+.board-canvas { width: 100%; height: 100%; }
 
 /* ---- Sidebar outer (handles slide animation) ------------------------------ */
 
@@ -336,6 +372,11 @@ input, select {
   width: 100%;
   aspect-ratio: 1 / 1;
   max-width: 720px;
+  /* .board-wrap is a fixed-height flex column, so keep the square placeholder
+     inside it (lobby view) rather than letting it overflow. */
+  max-height: 100%;
+  flex: 0 1 auto;
+  margin: auto;
   border: 2px dashed var(--border);
   border-radius: 8px;
   display: flex;
@@ -419,12 +460,63 @@ input, select {
 }
 .notif-modal-raven .notif-modal-header { color: #c69af0; }
 
+/* Card reveal: the card is dealt face-down and flips over.
+   The flip is a delayed keyframe rather than a JS timer, so dismissing the
+   modal mid-animation leaves nothing behind. */
+.notif-card-flip {
+  perspective: 1200px;
+}
+.notif-card-inner {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateY(180deg);
+  animation: notif-card-flip 0.65s cubic-bezier(0.32, 0.9, 0.3, 1) 0.4s forwards;
+}
+.notif-card-back {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  backface-visibility: hidden;
+  transform: rotateY(180deg);
+  /* Woven diagonal weave so the back reads as a card back, not a blank panel. */
+  background:
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.22) 0 6px, transparent 6px 12px),
+    linear-gradient(180deg, #3a3225 0%, #241f16 100%);
+}
+.notif-card-back-raven {
+  border-color: #6b3a8c;
+  background:
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.25) 0 6px, transparent 6px 12px),
+    linear-gradient(180deg, #33244a 0%, #1a1226 100%);
+}
+.notif-card-crest {
+  font-size: 2.4rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+.notif-card-back-label {
+  font-family: "Georgia", serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .notif-card {
   border: 2px solid var(--accent);
   border-radius: 10px;
   background: linear-gradient(180deg, #2f2a20 0%, #1f1c14 100%);
   padding: 1.25rem 1.25rem 1rem 1.25rem;
   position: relative;
+  backface-visibility: hidden;
+  /* Glow settles in just as the face comes round. */
+  animation: notif-card-settle 0.5s ease-out 0.85s both;
 }
 .notif-card-raven {
   border-color: #6b3a8c;
@@ -513,6 +605,28 @@ input, select {
 @keyframes notif-slide-in {
   from { transform: translateX(20px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+@keyframes notif-card-flip {
+  from { transform: rotateY(180deg); }
+  to   { transform: rotateY(0deg); }
+}
+@keyframes notif-card-settle {
+  from { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+  40%  { box-shadow: 0 0 26px 4px rgba(212, 175, 55, 0.45); }
+  to   { box-shadow: 0 0 10px 0 rgba(212, 175, 55, 0.14); }
+}
+.notif-card-raven { animation-name: notif-card-settle-raven; }
+@keyframes notif-card-settle-raven {
+  from { box-shadow: 0 0 0 0 rgba(160, 107, 207, 0); }
+  40%  { box-shadow: 0 0 26px 4px rgba(160, 107, 207, 0.5); }
+  to   { box-shadow: 0 0 10px 0 rgba(160, 107, 207, 0.16); }
+}
+
+/* Motion-sensitive players get the card face immediately, no spin. */
+@media (prefers-reduced-motion: reduce) {
+  .notif-card-inner { animation: none; transform: none; }
+  .notif-card-back { display: none; }
+  .notif-card { animation: none; }
 }
 
 /* ── Dice display ─────────────────────────────────────────────────────────── */

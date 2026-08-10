@@ -67,6 +67,16 @@ function formatEntry(e: LogEntry, me: string | null): string {
       const mv = p.move_kind ? ` [${p.move_kind}]` : "";
       return `${p.player} moved from ${p.src} → ${p.dst}${mv}.`;
     }
+    case "sent_to_space":
+      return `${p.player} is sent from ${p.src} to ${p.dst}` +
+        (p.label ? ` (${p.label})` : "") +
+        (p.misses_turn ? " — and misses their next turn." : ".");
+    case "miss_turn_queued":
+      return `${p.player}: ${p.label ?? "Miss a turn"} — they lose their next turn.`;
+    case "space_action_failed":
+      return `⚠ Space ${p.space ?? "?"} action ${p.key ?? "?"} failed (${p.reason ?? "?"}).`;
+    case "landing_chain_truncated":
+      return `⚠ Too many chained teleports at ${p.space ?? "?"} — stopped here.`;
     case "no_legal_move":
       return `${p.player} has no legal move (steps: ${p.steps ?? "?"}).`;
     case "choose_path":
@@ -93,6 +103,42 @@ function formatEntry(e: LogEntry, me: string | null): string {
     case "raven_card_drawn":
       // Raven cards are drawn aloud — the effect is public.
       return `Raven (${p.player}): ${ravenEffectLabel(p.effect ?? p.card ?? "?")}.`;
+
+    case "weapons_surrendered": {
+      const n = p.count ?? (p.cards ?? []).length;
+      if (n === 0) return `${p.player} reaches the Broad Arrow Tower unarmed.`;
+      // The owner sees what they gave up; everyone else just sees how much.
+      if (p.player === me) {
+        const names = (p.cards ?? []).map((c: string) => cardNameFromId(c)).join(", ");
+        return `Broad Arrow Tower: you surrendered ${names}.`;
+      }
+      return `Broad Arrow Tower: ${p.player} surrendered ${n} weapon${n === 1 ? "" : "s"}.`;
+    }
+
+    case "card_change_offered":
+      return `${p.player} may change a card.`;
+    case "card_changed":
+      // SECRET: which card went out and which came in is the drawer's business.
+      if (p.player === me) {
+        return `You discarded ${cardNameFromId(p.discarded ?? "")}` +
+          (p.drawn ? ` and drew ${cardNameFromId(p.drawn)}.` : " (deck empty).");
+      }
+      return `${p.player} changed a card.`;
+    case "card_change_skipped":
+      return `${p.player} had no card to change` +
+        (p.reason === "empty_hand" ? " (empty hand) — drew instead." : ".");
+    case "card_swap_offered":
+      return `${p.player} may swap a card with ${(p.candidates ?? []).join(" or ")}.`;
+    case "card_swapped":
+      // Both sides know what they gave; neither should learn the other's hand
+      // from the log, so only the two participants see the card names.
+      if (p.player === me || p.target === me) {
+        return `${p.player} gave ${cardNameFromId(p.given ?? "")} to ${p.target} ` +
+          `and took ${cardNameFromId(p.received ?? "")}.`;
+      }
+      return `${p.player} swapped a card with ${p.target}.`;
+    case "card_swap_skipped":
+      return `${p.player} found nobody to swap with.`;
 
     case "raven_needs_input":
       return `Waiting for raven effect input (${p.effect ?? "?"}).`;
@@ -124,8 +170,25 @@ function formatEntry(e: LogEntry, me: string | null): string {
     case "combat_special":
       // Special cards (Sanctuary, Mass Accretor) are played openly.
       return `${p.player} plays ${p.card ?? "?"} in combat.`;
-    case "combat_resolved":
-      return `Combat won by ${p.winner} (${p.loser} loses).`;
+    case "sanctuary_taken":
+      return `${p.defender} claims Sanctuary — the fight is off, but ` +
+        `${p.attacker} loses ${p.attacker_cards_lost ?? 0} card(s) and ` +
+        `${p.defender} loses ${p.defender_cards_lost ?? 0}. Both redraw.`;
+    case "combat_resolved": {
+      const parts = [
+        `⚔ ${p.attacker ?? "?"} ${p.attacker_total ?? 0} vs ` +
+        `${p.defender ?? "?"} ${p.defender_total ?? 0} — ` +
+        `${p.winner} wins${p.tie ? " (tie goes to the defender)" : ""}.`,
+      ];
+      const spoils: string[] = [];
+      const jewels = Array.isArray(p.jewels_taken) ? p.jewels_taken : [];
+      if (jewels.length) spoils.push(`${jewels.length} jewel(s): ${jewels.join(", ")}`);
+      if (p.coin_taken) spoils.push(p.coin_overflowed ? "a coin (overflows to Devereux)" : "a coin");
+      if (spoils.length) parts.push(`${p.winner} takes ${spoils.join(" and ")}.`);
+      if (p.cards_drawn) parts.push(`${p.winner} draws ${p.cards_drawn} card(s).`);
+      parts.push(`${p.loser} is carried to the Hospital and misses a turn.`);
+      return parts.join(" ");
+    }
 
     // ---- jewels & coin ------------------------------------------------------
     case "jewel_attempt_offered":
@@ -133,6 +196,8 @@ function formatEntry(e: LogEntry, me: string | null): string {
     case "jewel_attempt":
       // Tools are committed face-up, so we can show them to everyone.
       return `${p.player} attempts ${p.jewel ?? "?"}: roll ${sum(p.roll)} vs threshold ${p.threshold ?? "?"} — ${p.success ? "SUCCESS ✓" : "failed ✗"}.`;
+    case "jewel_attempt_retry_available":
+      return `${p.player} stays put — they can try the ${p.jewel ?? "jewel"} again next turn.`;
     case "jewel_acquired":
       return `${p.player} took the ${p.jewel ?? "?"}.`;
     case "jewel_auto_acquired":
@@ -169,7 +234,11 @@ function formatEntry(e: LogEntry, me: string | null): string {
     case "pecked_by_ravens":
       return `${p.player} is pecked by the ravens — off to hospital!`;
     case "resting_on_bench":
-      return `${p.player} sits on a bench to rest.`;
+      return `${p.player} sits on a bench to rest — they miss their next turn.`;
+    case "miss_turn_on_landing":
+      return `${p.player} stops at the ${p.label ?? p.space_kind ?? "square"} — they miss their next turn.`;
+    case "rack_sender_triggered":
+      return `${p.player} trips the alarm — dragged off to the Rack!`;
     case "stopped_and_searched":
       return `${p.player} is stopped and searched` +
         (p.carried_jewels ? ` (carrying ${p.carried_jewels} jewel(s)).` : ".");
@@ -229,6 +298,12 @@ function formatEntry(e: LogEntry, me: string | null): string {
     }
 
     // ---- misc ---------------------------------------------------------------
+    case "unhandled_space_action":
+      // The server emits this whenever a space carries an ``action.key`` the
+      // engine has no branch for. Surfaced loudly rather than silently — an
+      // unimplemented action is otherwise indistinguishable from a square that
+      // is simply meant to do nothing.
+      return `⚠ Space ${p.space ?? "?"} has an unimplemented action: ${p.key ?? "?"}.`;
     case "game_started":
       return `Game started (${p.mode ?? "?"} mode), ${(p.order ?? []).join(", ")}.`;
     case "chat":

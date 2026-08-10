@@ -93,9 +93,47 @@ def _send_to(state: GameState, player: PlayerState, space_id: str, board: Board)
     return [_event("player_moved", player=player.username, src=old, dst=space_id, move_kind="teleport")]
 
 
+def _summon_to(state: GameState, player: PlayerState, space_id: str, board: Board) -> EventList:
+    """Teleport, then run the destination square's own landing effects.
+
+    Cards that *summon* a player drop them onto a live square: the Museum still
+    hands out a tower card, Queen's House still starts the accreditation trial,
+    "Go to Shop" squares still fire. Cards that *punish* deliberately use plain
+    ``_send_to`` instead — the hospital, the Rack and the prison towers are the
+    whole effect, and re-resolving them would stack a second penalty on top.
+    """
+    evs = _send_to(state, player, space_id, board)
+    # Deferred import: rules imports this module at module level.
+    from .rules import resolve_landing_after_summons
+    evs.extend(resolve_landing_after_summons(state, board, player))
+    return evs
+
+
 def _clear_confinement(player: PlayerState) -> None:
     player.status = Status.NORMAL
     player.status_turns_remaining = 0
+
+
+def send_to_rack(state: GameState, player: PlayerState, board: Board) -> EventList:
+    """Put ``player`` on the Rack for 3 turns and take the entry toll.
+
+    The toll is the coin if they hold one, otherwise their whole hand. Shared by
+    the ``rack_of_torment`` raven card and by landing on a ``rack_sender``
+    square, so the two can't drift apart.
+    """
+    evs = _send_to(state, player, board.data.rack_space, board)
+    player.status = Status.RACKED
+    player.status_turns_remaining = 3
+    if player.has_coin:
+        player.has_coin = False
+        state.coins_available = min(5, state.coins_available + 1)
+        evs.append(_event("rack_coin_lost", player=player.username))
+    else:
+        lost = player.hand
+        player.hand = []
+        state.tower_discard.extend(lost)
+        evs.append(_event("rack_hand_lost", player=player.username, count=len(lost)))
+    return evs
 
 
 # ---------- tower effects --------------------------------------------------
@@ -291,7 +329,7 @@ def _go_to_location(state, player, params, *, board, rng, **kw):
         loc = params.get("chosen")
         if loc is None or not board.has_space(loc):
             raise EffectError(f"Unknown chosen location: {loc}")
-    return state, _send_to(state, player, loc, board)
+    return state, _summon_to(state, player, loc, board)
 
 
 @register("go_to_jewel_view")
@@ -392,7 +430,7 @@ def _photo(state, player, params, *, board, rng, **kw):
             return state, [_event("raven_needs_input", kind="choose_photo_space", candidates=sorted(candidates))]
     if chosen not in candidates:
         raise EffectError(f"Not adjacent to an occupied post: {chosen}")
-    return state, _send_to(state, player, chosen, board)
+    return state, _summon_to(state, player, chosen, board)
 
 
 @register("stopped_and_searched")
@@ -481,7 +519,7 @@ def _birthday(state, player, params, *, board, rng, **kw):
 
 @register("lost")
 def _lost(state, player, params, *, board, rng, **kw):
-    return state, _send_to(state, player, board.data.queens_house_space, board)
+    return state, _summon_to(state, player, board.data.queens_house_space, board)
 
 
 @register("chief_yeoman_passes")
@@ -508,12 +546,12 @@ def _bowyer(state, player, params, *, board, rng, **kw):
 
 @register("shop_for_film")
 def _shop(state, player, params, *, board, rng, **kw):
-    return state, _send_to(state, player, board.data.shop_space, board)
+    return state, _summon_to(state, player, board.data.shop_space, board)
 
 
 @register("governors_tea")
 def _gov_tea(state, player, params, *, board, rng, **kw):
-    evs = _send_to(state, player, board.data.queens_house_space, board)
+    evs = _summon_to(state, player, board.data.queens_house_space, board)
     player.miss_next_turn = True
     evs.append(_event("governors_tea", player=player.username))
     return state, evs
@@ -530,20 +568,7 @@ def _beauchamp(state, player, params, *, board, rng, **kw):
 
 @register("rack_of_torment")
 def _rack_raven(state, player, params, *, board, rng, **kw):
-    evs = _send_to(state, player, board.data.rack_space, board)
-    player.status = Status.RACKED
-    player.status_turns_remaining = 3
-    # On Rack entry: if coin held, lose it; else lose entire hand.
-    if player.has_coin:
-        player.has_coin = False
-        state.coins_available = min(5, state.coins_available + 1)
-        evs.append(_event("rack_coin_lost", player=player.username))
-    else:
-        lost = player.hand
-        player.hand = []
-        state.tower_discard.extend(lost)
-        evs.append(_event("rack_hand_lost", player=player.username, count=len(lost)))
-    return state, evs
+    return state, send_to_rack(state, player, board)
 
 
 @register("metallicity")

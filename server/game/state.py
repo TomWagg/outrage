@@ -26,6 +26,7 @@ class Phase(str, Enum):
     CHOOSING_PATH = "CHOOSING_PATH"
     COMBAT = "COMBAT"
     JEWEL_ATTEMPT = "JEWEL_ATTEMPT"
+    CARD_CHANGE = "CARD_CHANGE"
     ACCREDITATION_ATTEMPT = "ACCREDITATION_ATTEMPT"
     RAVEN_EFFECT = "RAVEN_EFFECT"
     SPLIT_SEVEN_ASSIGN = "SPLIT_SEVEN_ASSIGN"
@@ -145,6 +146,22 @@ class PendingJewelAttempt(BaseModel):
     source: Literal["landing", "raven_view"] = "landing"
 
 
+class PendingCardChange(BaseModel):
+    """A "Change a card" square is waiting for the player to pick a discard.
+
+    ``kind`` distinguishes the two prompts that share this shape: the
+    wall-walk *change* squares (discard one, draw the top of the tower deck)
+    and ww75's *swap* (give one card to a chosen opponent, receive a random one
+    back). For a swap, ``candidates`` lists the opponents who can be picked.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["change", "swap"] = "change"
+    space_id: str
+    candidates: list[str] = Field(default_factory=list)
+
+
 class PendingSplitSeven(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -208,6 +225,7 @@ class TurnContext(BaseModel):
     pending_raven: Optional[PendingRavenEffect] = None
     pending_jewel: Optional[PendingJewelAttempt] = None
     pending_split: Optional[PendingSplitSeven] = None
+    pending_card_change: Optional[PendingCardChange] = None
     # For ``binary_disruption`` and split-7: allow the roller to choose splits
     # on an arbitrary roll; we record the effective total here.
     binary_disruption_armed: bool = False

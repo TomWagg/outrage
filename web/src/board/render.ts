@@ -10,6 +10,14 @@
 import type { BoardData, BoardSpace, GameSnapshot } from "../state.js";
 
 const CELL = 32;                          // pixels per grid unit
+
+// Zoom, persisted across renders (the renderer rebuilds the SVG on every
+// event, so this can't live in the DOM). 1 = fit the whole board in the
+// viewport; above that the viewport scrolls.
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 1.25;
+let boardZoom = 1;
 const PAD = 16;                           // viewport padding
 const PIECE_RADIUS = CELL * 0.32;
 const MAX_PIECES_PER_SPACE = 6;
@@ -34,9 +42,9 @@ const SPACE_KIND_DESC: Record<string, string> = {
   tower:            "Tower card — draw a tower card on landing.",
   devereux:         "Devereux Tower — draw a tower card. Excess coin is stored here.",
   museum:           "Museum — draw a tower card on landing.",
-  hospital:         "Hospital — draw a tower card on landing. Sent here after losing combat; miss a turn.",
+  hospital:         "Hospital — miss a turn. Also where you're sent after losing combat.",
   royal_armouries:  "Royal Armouries — draw a tower card on landing.",
-  shop:             "Shop — draw a tower card on landing.",
+  shop:             "Shop — browsing takes a while; miss a turn.",
   rack:             "The Rack — sent here by effect. Lose your coin (or whole hand); miss 3 turns.",
   rack_sender:      "Rack sender — can dispatch players to The Rack.",
   bench:            "Bench — sit here and miss a turn.",
@@ -164,9 +172,12 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     viewBox: `0 0 ${w} ${h}`,
     "data-board": "1",
   });
+  // The SVG fills its canvas box; preserveAspectRatio (default "xMidYMid meet")
+  // letterboxes the viewBox inside it, so at zoom 1 the whole board is visible
+  // however the container is shaped.
   svg.style.display = "block";
   svg.style.width = "100%";
-  svg.style.height = "auto";
+  svg.style.height = "100%";
   svg.style.background = "#223";
   svg.style.borderRadius = "8px";
 
@@ -777,8 +788,94 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
   });
   svg.addEventListener("mouseleave", hideTooltip);
 
-  container.innerHTML = "";
-  container.appendChild(svg);
+  mountBoard(container, svg);
+}
+
+/**
+ * Put ``svg`` into the container's zoom scaffolding, building it on first use.
+ *
+ * renderBoard runs on every server event and rebuilds the SVG from scratch, so
+ * this preserves both the zoom level (module-level) and the viewport's scroll
+ * position — otherwise a zoomed-in player would be thrown back to the top-left
+ * corner every time anything happened.
+ */
+function mountBoard(container: HTMLElement, svg: SVGElement): void {
+  let viewport = container.querySelector<HTMLElement>(".board-viewport");
+  let canvas = container.querySelector<HTMLElement>(".board-canvas");
+
+  if (!viewport || !canvas) {
+    container.innerHTML = "";
+    container.appendChild(buildZoomBar(container));
+    viewport = document.createElement("div");
+    viewport.className = "board-viewport";
+    canvas = document.createElement("div");
+    canvas.className = "board-canvas";
+    viewport.appendChild(canvas);
+    container.appendChild(viewport);
+  }
+
+  const { scrollLeft, scrollTop } = viewport;
+  canvas.innerHTML = "";
+  canvas.appendChild(svg);
+  applyZoom(container);
+  viewport.scrollLeft = scrollLeft;
+  viewport.scrollTop = scrollTop;
+}
+
+function buildZoomBar(container: HTMLElement): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = "board-zoombar";
+  bar.innerHTML = `
+    <button type="button" data-zoom="out" title="Zoom out">−</button>
+    <span class="board-zoom-level" data-zoom-level>100%</span>
+    <button type="button" data-zoom="in" title="Zoom in">+</button>
+    <button type="button" data-zoom="fit" title="Fit the whole board">Fit</button>
+  `;
+  bar.addEventListener("click", (e) => {
+    const action = (e.target as HTMLElement).closest("[data-zoom]")?.getAttribute("data-zoom");
+    if (!action) return;
+    const next =
+      action === "in" ? boardZoom * ZOOM_STEP
+      : action === "out" ? boardZoom / ZOOM_STEP
+      : 1;
+    setZoom(container, next);
+  });
+  return bar;
+}
+
+/**
+ * Set the zoom level, keeping whatever is currently in the middle of the
+ * viewport in the middle afterwards — zooming from the top-left corner makes
+ * the board feel like it's running away from you.
+ */
+function setZoom(container: HTMLElement, next: number): void {
+  const viewport = container.querySelector<HTMLElement>(".board-viewport");
+  const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+  if (!viewport || clamped === boardZoom) return;
+
+  // Fraction of the scrollable content currently at the viewport's centre.
+  const cx = (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth;
+  const cy = (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight;
+
+  boardZoom = clamped;
+  applyZoom(container);
+
+  viewport.scrollLeft = cx * viewport.scrollWidth - viewport.clientWidth / 2;
+  viewport.scrollTop = cy * viewport.scrollHeight - viewport.clientHeight / 2;
+}
+
+function applyZoom(container: HTMLElement): void {
+  const canvas = container.querySelector<HTMLElement>(".board-canvas");
+  if (canvas) {
+    canvas.style.width = `${boardZoom * 100}%`;
+    canvas.style.height = `${boardZoom * 100}%`;
+  }
+  const level = container.querySelector<HTMLElement>("[data-zoom-level]");
+  if (level) level.textContent = `${Math.round(boardZoom * 100)}%`;
+  const out = container.querySelector<HTMLButtonElement>('[data-zoom="out"]');
+  const zin = container.querySelector<HTMLButtonElement>('[data-zoom="in"]');
+  if (out) out.disabled = boardZoom <= ZOOM_MIN + 1e-6;
+  if (zin) zin.disabled = boardZoom >= ZOOM_MAX - 1e-6;
 }
 
 // ---------- helpers ----------
