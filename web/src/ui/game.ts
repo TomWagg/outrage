@@ -14,6 +14,7 @@ import { renderControlsPanel } from "./controls.js";
 import { renderHandPanel } from "./hand.js";
 import { renderLogPanel } from "./log.js";
 import { renderCombatModal } from "./combat.js";
+import { renderGameOverScreen } from "./gameover.js";
 import { createDiceDisplay } from "./dice.js";
 
 export function renderGameLayout(
@@ -80,13 +81,24 @@ export function renderGameLayout(
     <button class="sidebar-reveal-tab" id="sidebar-reveal-tab" title="Show sidebar">›</button>
 
     <div id="combat-modal-slot"></div>
+    <div id="gameover-slot"></div>
   `;
 
   // ---- sub-panel renderers ---------------------------------------------------
   const controls = renderControlsPanel(root.querySelector<HTMLElement>("#controls-slot")!);
   const hand     = renderHandPanel(root.querySelector<HTMLElement>("#hand-slot")!);
   const logPanel = renderLogPanel(root.querySelector<HTMLElement>("#log-slot")!);
-  const combat   = renderCombatModal(root.querySelector<HTMLElement>("#combat-modal-slot")!);
+  // The combat reveal advances on its own timer, so it needs a way to ask for
+  // a re-render between snapshots. `refresh` is assigned below, once the
+  // update closure exists.
+  let refresh: () => void = () => {};
+  const combat   = renderCombatModal(
+    root.querySelector<HTMLElement>("#combat-modal-slot")!,
+    ws,
+    () => refresh(),
+  );
+
+  const gameover = renderGameOverScreen(root.querySelector<HTMLElement>("#gameover-slot")!);
 
   const dice = createDiceDisplay();
   root.querySelector<HTMLElement>("#dice-slot")!.appendChild(dice.el);
@@ -147,8 +159,7 @@ export function renderGameLayout(
   // ---- roll-key tracking (unchanged from before) ----------------------------
   let prevRollKey = "";
 
-  return {
-    update: () => {
+  const doUpdate = () => {
       updateStatus(root, state);
 
       const roll   = state.game?.turn.roll ?? [];
@@ -167,14 +178,17 @@ export function renderGameLayout(
       logPanel.update(state);
       updateChat(root, state);
       combat.update(state, ws);
+      gameover.update(state, ws);
 
       if (newRoll) {
         dice.roll(roll[0], roll[1], () => {
           updateBoard(root, ws, state);
         });
       }
-    },
   };
+  refresh = doUpdate;
+
+  return { update: doUpdate };
 }
 
 // =============================================================================

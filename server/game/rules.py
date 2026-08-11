@@ -33,6 +33,7 @@ from .rng import Rng
 from .state import (
     Combat,
     GameState,
+    GameStats,
     LogEntry,
     JewelId,
     PendingCardChange,
@@ -68,6 +69,67 @@ def _ev(kind: str, **payload: Any) -> dict[str, Any]:
 def _log(state: GameState, evs: Iterable[dict[str, Any]]) -> None:
     for e in evs:
         state.log.append(LogEntry(kind=e["kind"], payload=e.get("payload", {})))
+
+
+# Events that put a player behind bars, for the "times locked up" tally.
+_LOCKUP_EVENTS = {
+    "three_doubles_bloody_tower", "beauchamp_imprisonment", "bowyer_questioning",
+    "rack_sender_triggered", "firecrackers_racked", "stopped_forfeit",
+}
+
+
+def compute_game_stats(state: GameState) -> dict[str, GameStats]:
+    """Fold the event log into per-player tallies for the end-of-game screen.
+
+    The log is the authoritative record of the whole game, so one pass over it
+    beats scattering counters through the rule engine — and it means a stat can
+    be added later without touching the rules at all.
+    """
+    stats = {p.username: GameStats() for p in state.players}
+
+    def of(name: Any) -> Optional[GameStats]:
+        return stats.get(name) if isinstance(name, str) else None
+
+    for entry in state.log:
+        p = entry.payload or {}
+        s = of(p.get("player"))
+        kind = entry.kind
+
+        if kind == "turn_start" and s:
+            s.turns_taken += 1
+        elif kind == "dice_rolled" and s:
+            roll = p.get("roll") or []
+            if len(roll) == 2 and roll[0] == roll[1]:
+                s.doubles_rolled += 1
+        elif kind == "player_moved" and s:
+            # Only walked squares count; a teleport carries no path.
+            path = p.get("path") or []
+            if len(path) > 1:
+                s.steps_taken += len(path) - 1
+        elif kind == "tower_card_drawn" and s:
+            s.tower_cards_drawn += 1
+        elif kind == "raven_card_drawn" and s:
+            s.raven_cards_drawn += 1
+        elif kind == "jewel_attempt" and s:
+            s.jewel_attempts += 1
+        elif kind in ("jewel_acquired", "jewel_auto_acquired") and s:
+            s.jewels_collected += 1
+        elif kind == "coin_picked_up" and s:
+            s.coins_picked_up += 1
+        elif kind == "missed_turn" and s:
+            s.turns_lost += 1
+        elif kind == "combat_resolved":
+            w, l = of(p.get("winner")), of(p.get("loser"))
+            if w:
+                w.fights_won += 1
+                # Jewels taken off the loser count towards the victor's haul.
+                w.jewels_collected += len(p.get("jewels_taken") or [])
+            if l:
+                l.fights_lost += 1
+        elif kind in _LOCKUP_EVENTS and s:
+            s.times_locked_up += 1
+
+    return stats
 
 
 def _warder_blocked_spaces(state: GameState, board: "Board") -> set[str]:
@@ -110,7 +172,13 @@ def apply(
     handler = _INTENTS.get(intent_name)
     if handler is None:
         raise RuleError(f"Unknown intent: {intent_name}")
-    return handler(state, payload, board=board, rng=rng)
+    new_state, events = handler(state, payload, board=board, rng=rng)
+    # Tally here rather than at each game-over site: handlers log their events
+    # on the way out, so this is the first point where the log is complete for
+    # the turn that ended the game.
+    if new_state.phase == Phase.GAME_OVER and not new_state.final_stats:
+        new_state.final_stats = compute_game_stats(new_state)
+    return new_state, events
 
 
 # =========================================================================
@@ -751,30 +819,46 @@ def _draw_raven_and_resolve(state: GameState, board: Board, player: PlayerState)
         player=player.username, card=card.id, effect=card.effect_key,
         params=dict(card.params),
     )]
-    # If the effect needs input, park pending state.
-    ek = card.effect_key
-    params = dict(card.params)
-    # Effects that need input: go_to_location(player_choice), call_warder_to_post(chooser),
-    # return_warder_to_barracks (multiple), rest_on_bench (multiple), photo_with_warder,
-    # stopped_and_searched.
-    if _raven_needs_input(ek, params, state, board, player):
-        state.turn.pending_raven = PendingRavenEffect(
-            effect_key=ek,
-            card_id=card.id,
-            params=params,
-            drawer=player.username,
-        )
-        state.phase = Phase.RAVEN_EFFECT
-        evs.append(_ev("raven_needs_input", effect=ek))
-        return evs
-    # Auto-resolve.
+    # Nothing fires yet. The card is dealt face-down and parked; the drawer
+    # turns it over (``reveal_raven_notice``) and only then does the effect
+    # resolve — otherwise pieces move before anyone has seen why.
+    state.turn.pending_raven = PendingRavenEffect(
+        effect_key=card.effect_key or "",
+        card_id=card.id,
+        params=dict(card.params),
+        drawer=player.username,
+    )
+    state.phase = Phase.RAVEN_EFFECT
+    return evs
+
+
+def _resolve_pending_raven(
+    state: GameState, board: Board, rng: Rng, extra_params: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Dispatch the parked raven effect and settle the phase afterwards."""
+    pr = state.turn.pending_raven
+    if pr is None:
+        return []
+    player = state.player(pr.drawer)
+    merged = dict(pr.params) | dict(extra_params)
     from .cards_effects import dispatch as _dispatch
     try:
-        _, sub_evs = _dispatch(ek, state, player, params, board=board, rng=_GLOBAL_RNG.get())
+        _, evs = _dispatch(pr.effect_key, state, player, merged, board=board, rng=rng)
     except EffectError as exc:
-        evs.append(_ev("raven_effect_failed", effect=ek, error=str(exc)))
+        evs = [_ev("raven_effect_failed", effect=pr.effect_key, error=str(exc))]
+
+    # An effect can come back still wanting input (e.g. "go to a location of
+    # your choice" with nothing chosen yet). Leave it parked in that case.
+    if any(e["kind"] == "raven_needs_input" for e in evs):
         return evs
-    evs.extend(sub_evs)
+
+    state.turn.pending_raven = None
+    if state.phase == Phase.RAVEN_EFFECT:
+        # go_to_jewel_view queues an immediate theft attempt; honour it.
+        if state.turn.pending_jewel is not None:
+            state.phase = Phase.JEWEL_ATTEMPT
+        else:
+            state.phase = Phase.TURN_END
     return evs
 
 
@@ -782,8 +866,11 @@ def _raven_needs_input(ek: str, params: dict, state: GameState, board: Board, pl
     if ek == "go_to_location" and params.get("location") == "player_choice":
         return True
     if ek == "call_warder_to_post" and params.get("post") == "chooser":
-        # And there is actually a warder in the barracks.
-        if any(w.location == board.data.barracks_space for w in state.warders):
+        # Only worth asking if there's a warder to call *and* somewhere free
+        # to call them to.
+        from .cards_effects import free_warder_posts
+        if (any(w.location == board.data.barracks_space for w in state.warders)
+                and len(free_warder_posts(state, board)) > 1):
             return True
     if ek == "return_warder_to_barracks":
         out = [w for w in state.warders if w.location != board.data.barracks_space]
@@ -1171,6 +1258,13 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         else combat.defender_cards
     )
     cards_drawn = len(winner_plays)
+    # The committed cards themselves, so every client can replay the reveal one
+    # card at a time. resolve() discards them, so snapshot them first.
+    def _card_rows(cards):
+        return [{"id": c.id, "name": c.name, "value": c.value} for c in cards]
+    attacker_rows = _card_rows(combat.attacker_cards)
+    defender_rows = _card_rows(combat.defender_cards)
+    hand_before = {c.id for c in winner_state.hand}
 
     # Auto-resolve right away — there are no more decisions to make.
     tower_deck = _deck_view(state, "tower")
@@ -1182,12 +1276,18 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         rng=rng,
     )
     _sync_deck(state, "tower", tower_deck)
+    # Which cards the victor actually drew. Diffing the hand avoids threading a
+    # return value back out of combat.resolve(). Only the winner can turn these
+    # ids into names — every other client has an empty hand for them.
+    winner_drew = [c.id for c in winner_state.hand if c.id not in hand_before]
     evs = [_ev(
         "combat_resolved",
         winner=combat.winner,
         loser=loser_name,
         attacker=combat.attacker,
         defender=combat.defender,
+        attacker_cards=attacker_rows,
+        defender_cards=defender_rows,
         attacker_total=atk_total,
         defender_total=def_total,
         tie=atk_total == def_total,
@@ -1196,6 +1296,7 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         # A second coin can't be held, so it goes back to Devereux.
         coin_overflowed=coin_taken and winner_had_coin,
         cards_drawn=cards_drawn,
+        winner_drew=winner_drew,
         loser_sent_to=board.data.hospital_space,
     )]
     state.phase = Phase.TURN_END
@@ -1356,6 +1457,33 @@ def _intent_attempt_accreditation(state, payload, *, board, rng):
 # =========================================================================
 
 
+def _intent_reveal_raven_notice(state, payload, *, board, rng):
+    """The drawer turns the card face-up; the effect fires on the way out.
+
+    Reveal is shared state rather than a per-client animation, so the whole
+    table flips together and nobody sees the consequences before the cause.
+    """
+    _require_phase(state, Phase.RAVEN_EFFECT)
+    pr = state.turn.pending_raven
+    notice = state.active_raven_notice
+    if pr is None or notice is None:
+        raise RuleError("No raven card to reveal")
+    username = payload["username"]
+    if username != pr.drawer:
+        raise RuleError("Only the drawer can reveal the raven card")
+    if notice.revealed:
+        raise RuleError("That raven card is already face-up")
+
+    notice.revealed = True
+    evs: list[dict[str, Any]] = [_ev(
+        "raven_notice_revealed",
+        player=username, card=notice.card_id, effect=pr.effect_key,
+    )]
+    evs.extend(_resolve_pending_raven(state, board, rng, {}))
+    _log(state, evs)
+    return state, evs
+
+
 def _intent_resolve_raven_effect(state, payload, *, board, rng):
     _require_phase(state, Phase.RAVEN_EFFECT)
     pr = state.turn.pending_raven
@@ -1364,18 +1492,10 @@ def _intent_resolve_raven_effect(state, payload, *, board, rng):
     username = payload["username"]
     if username != pr.drawer:
         raise RuleError("Only the drawer can resolve their raven effect")
-    player = state.player(username)
-    # Merge player-supplied params over the card's base params.
-    merged = dict(pr.params) | dict(payload.get("params") or {})
-    from .cards_effects import dispatch as _dispatch
-    _, evs = _dispatch(pr.effect_key, state, player, merged, board=board, rng=rng)
-    state.turn.pending_raven = None
-    if state.phase == Phase.RAVEN_EFFECT:
-        # go_to_jewel_view sets pending_jewel; honour it before ending.
-        if state.turn.pending_jewel is not None:
-            state.phase = Phase.JEWEL_ATTEMPT
-        else:
-            state.phase = Phase.TURN_END
+    notice = state.active_raven_notice
+    if notice is not None and not notice.revealed:
+        raise RuleError("Reveal the raven card before resolving it")
+    evs = _resolve_pending_raven(state, board, rng, payload.get("params") or {})
     _log(state, evs)
     return state, evs
 
@@ -1571,6 +1691,10 @@ def _intent_dismiss_raven_notice(state, payload, *, board, rng):
         return state, []
     if card_id and state.active_raven_notice.card_id != card_id:
         return state, []
+    if not state.active_raven_notice.revealed:
+        # Clearing a face-down card would strand the turn in RAVEN_EFFECT with
+        # nothing left to reveal, and nobody would ever see what it was.
+        raise RuleError("The raven card hasn't been turned over yet")
     cleared = state.active_raven_notice.card_id
     state.active_raven_notice = None
     ev = _ev(
@@ -1620,6 +1744,7 @@ _INTENTS: dict[str, Any] = {
     "attempt_jewel": _intent_attempt_jewel,
     "change_card": _intent_change_card,
     "attempt_accreditation": _intent_attempt_accreditation,
+    "reveal_raven_notice": _intent_reveal_raven_notice,
     "resolve_raven_effect": _intent_resolve_raven_effect,
     "dismiss_raven_notice": _intent_dismiss_raven_notice,
     "end_turn": _intent_end_turn,

@@ -7,6 +7,7 @@
 import type { WsClient } from "../net/ws.js";
 import type { ClientState } from "../state.js";
 import { currentTurnUsername, playerByName } from "../state.js";
+import { towerCardIcon } from "./card_art.js";
 
 export function renderControlsPanel(root: HTMLElement): { update: (state: ClientState, ws: WsClient) => void } {
   root.innerHTML = `
@@ -47,30 +48,9 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   `;
 
   if (g.phase === "GAME_OVER") {
+    // The results screen (gameover.ts) is the real end-of-game surface; this
+    // panel just leaves a way back in case it's been dismissed.
     info.innerHTML += `<div style="color:var(--accent);margin-top:0.4rem">Winner: ${g.winner ?? "—"}</div>`;
-    if (g.mode === "slow") {
-      const JV: Record<string, number> = {
-        crown_st_edward: 5, crown_prince_of_wales: 4, sceptre: 3, orb: 2, sword: 1,
-      };
-      const rows = [...g.players]
-        .map((p) => ({
-          username: p.username,
-          count: p.jewels.length,
-          top: p.jewels.reduce((m, j) => Math.max(m, JV[j] ?? 0), 0),
-          total: p.jewels.reduce((s, j) => s + (JV[j] ?? 0), 0),
-          escaped: p.escaped,
-        }))
-        .sort((a, b) =>
-          b.count - a.count
-          || b.top - a.top
-          || b.total - a.total
-          || a.username.localeCompare(b.username));
-      const lines = rows
-        .map((r, i) =>
-          `<li>${i + 1}. <strong>${r.username}</strong> — ${r.count} jewel${r.count === 1 ? "" : "s"} (top ${r.top})${r.escaped ? " <em>(escaped)</em>" : ""}</li>`)
-        .join("");
-      info.innerHTML += `<ol style="margin:0.4rem 0 0;padding-left:1.2rem;font-size:0.85rem">${lines}</ol>`;
-    }
     if (you) row.appendChild(button("Return to lobby", () => ws.send("reset_lobby", {}).catch(noop)));
     return;
   }
@@ -114,8 +94,21 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   switch (g.phase) {
     case "TURN_START":
     case "PRE_ROLL":
-    case "ACCREDITATION_ATTEMPT":
-      row.appendChild(button("Roll dice", () => ws.send("roll_dice", { username: you }).catch(noop)));
+    case "ACCREDITATION_ATTEMPT": {
+      // Sitting out this turn: there's nothing to roll for, so don't offer a
+      // roll. A Tower Pass can still buy an extra turn, hence the card buttons
+      // below stay.
+      const missing = !!me?.miss_next_turn;
+      if (missing) {
+        const why = document.createElement("div");
+        why.style.marginBottom = "0.4rem";
+        why.style.color = "var(--muted)";
+        why.style.fontSize = "0.85rem";
+        why.textContent = "You're missing this turn.";
+        pending.appendChild(why);
+      } else {
+        row.appendChild(button("Roll dice", () => ws.send("roll_dice", { username: you }).catch(noop)));
+      }
       row.appendChild(button("End turn", () => ws.send("end_turn", { username: you }).catch(noop)));
       if (g.phase === "ACCREDITATION_ATTEMPT" && me?.trying_accreditation) {
         const tip = document.createElement("div");
@@ -130,7 +123,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       }
       // A failed theft leaves you standing on the jewel — offer another go
       // before you roll and walk away.
-      if (me && standingJewel(g, me)) {
+      if (me && !missing && standingJewel(g, me)) {
         row.appendChild(
           button("Attempt the jewel again", () =>
             ws.send("attempt_jewel", {
@@ -144,6 +137,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       }
       renderPreRollCardButtons(pending, g, me, you, state, ws);
       break;
+    }
 
     case "CHOOSING_PATH": {
       const pm = g.turn.pending_move;
@@ -205,7 +199,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     }
 
     case "CARD_CHANGE": {
-      renderCardChange(pending, row, g, me, you, ws);
+      renderCardChange(pending, g, me, you, ws);
       break;
     }
 
@@ -249,7 +243,6 @@ function standingJewel(
  */
 function renderCardChange(
   pending: HTMLElement,
-  row: HTMLElement,
   g: import("../state.js").GameSnapshot,
   me: import("../state.js").GamePlayer | null,
   you: string | null,
@@ -276,22 +269,43 @@ function renderCardChange(
     : "";
   pending.innerHTML =
     (isSwap
-      ? `<div>Give a card to another player — you'll get a <strong>random</strong> one back.</div>`
-      : `<div>Discard a card and draw the top of the tower deck.</div>`) +
+      ? `<div>Pick a card to give away — you'll get a <strong>random</strong> one back.</div>`
+      : `<div>Pick a card to discard; you'll draw the top of the tower deck.</div>`) +
     targetPicker;
 
   const targetSel = pending.querySelector<HTMLSelectElement>("#cc-target");
+
+  // Same tiles as the combat picker: pick the card by its picture. This goes
+  // in `pending` (a block) rather than `row` (a flex line) — inside the flex
+  // row the grid has no definite width and collapses to a single column.
+  const grid = document.createElement("div");
+  grid.className = "card-tile-grid";
+  grid.style.marginTop = "0.6rem";
   for (const c of hand) {
-    row.appendChild(
-      button(`${isSwap ? "Give" : "Discard"} ${c.name}`, () =>
-        ws.send("change_card", {
-          username: you,
-          card_id: c.id,
-          ...(isSwap ? { target: targetSel?.value } : {}),
-        }).catch(noop),
-      ),
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "card-tile";
+    tile.title = `${isSwap ? "Give away" : "Discard"} ${c.name}`;
+    tile.innerHTML =
+      (c.value ? `<span class="card-tile-value">${c.value}</span>` : "") +
+      `<span class="card-tile-art">${towerCardIcon(c.name, 40)}</span>` +
+      `<span class="card-tile-name">${escapeHtml(c.name)}</span>`;
+    tile.addEventListener("click", () =>
+      ws.send("change_card", {
+        username: you,
+        card_id: c.id,
+        ...(isSwap ? { target: targetSel?.value } : {}),
+      }).catch(noop),
     );
+    grid.appendChild(tile);
   }
+  pending.appendChild(grid);
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!
+  ));
 }
 
 function renderSplitSeven(
@@ -440,8 +454,26 @@ function renderRavenEffect(
         pending.textContent = "Resolving raven card…";
         return;
       }
+      // A post holds one warder, so only offer the empty ones — the server
+      // rejects an occupied choice anyway.
+      const postSpace = new Map(
+        (state.board?.warder_posts ?? []).map((wp) => [wp.id, wp.space_id]),
+      );
+      const barracks = state.board?.barracks_space;
+      const manned = new Set(
+        g.warders.filter((w) => w.location !== barracks).map((w) => w.location),
+      );
+      const free = WARDER_POSTS.filter((p) => {
+        const sp = postSpace.get(p.id);
+        return sp ? !manned.has(sp) : true;
+      });
+      if (free.length === 0) {
+        pending.textContent = "Every post is already manned — nothing to do.";
+        row.appendChild(button("Continue", () => sendResolve({})));
+        break;
+      }
       pending.textContent = "Raven — pick which post to call a warder to:";
-      for (const p of WARDER_POSTS) {
+      for (const p of free) {
         row.appendChild(button(p.label, () => sendResolve({ chosen_post: p.id })));
       }
       break;

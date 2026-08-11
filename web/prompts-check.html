@@ -1,0 +1,68 @@
+<meta charset="utf-8">
+<title>Prompt UI check</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>
+  body{background:#1a1a1a;color:#f0ead6;font-family:Georgia,serif;padding:1rem;margin:0}
+  h2{font-size:.85rem;letter-spacing:.12em;text-transform:uppercase;margin:1.2rem 0 .5rem}
+  .bar{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
+  .bar button{font-size:.75rem;padding:.2rem .5rem}
+</style>
+<div class="bar">
+  <button id="as-drawer">raven: as drawer</button>
+  <button id="as-other">raven: as someone else</button>
+  <button id="as-revealed">raven: revealed</button>
+</div>
+<h2>Card swap prompt</h2>
+<div id="controls-slot"></div>
+<div id="notif-note" style="color:#888;font-size:.8rem;margin-top:1rem">
+  Raven modal renders as a full-screen overlay.
+</div>
+<script type="module">
+  import { renderControlsPanel } from "/src/ui/controls.ts";
+  import { mountNotifications } from "/src/ui/notifications.ts";
+
+  const ws = { on: () => {}, send: async (k, p) => { console.log("send", k, p); } };
+  const c = (id, name, cat, val) => ({ id, kind: "tower", name, category: cat, value: val });
+  const hand = [c("h1","Crossbow","weapon",10), c("h2","Rope","traversal",0),
+                c("h3","A Key to the Jewel Cases","burglary",9),
+                c("h4","Disguise","utility",0), c("h5","Firecrackers","custom",0)];
+
+  const state = {
+    you: "Tom",
+    board: { spaces: [], warder_posts: [], barracks_space: "barracks" },
+    log: [],
+    game: {
+      phase: "CARD_CHANGE",
+      players: [{ username:"Tom", hand, hand_size:5, position:"ww01", jewels:[] },
+                { username:"Alex", hand:[], hand_size:4, position:"ww02", jewels:[] }],
+      turn_order: ["Tom","Alex"], current_turn_index: 0,
+      warders: [],
+      turn: { roll: [], consecutive_doubles:0, extra_turns_queued:0,
+              visited_this_turn:[], cards_played_this_turn:[],
+              pending_move:null, pending_raven:null, pending_jewel:null,
+              pending_split:null,
+              pending_card_change:{ kind:"swap", space_id:"ww75_swap", candidates:["Alex"] } },
+      combat: null,
+      active_raven_notice: null,
+      jewels_available: {},
+    },
+  };
+
+  const controls = renderControlsPanel(document.getElementById("controls-slot"));
+  const notif = mountNotifications(ws, state, () => {});
+  const refresh = () => { controls.update(state, ws); notif.update(); };
+
+  const notice = (drawer, revealed) => ({
+    card_id: "raven:rack_of_torment:1", effect_key: "rack_of_torment",
+    drawer, params: {}, revealed,
+  });
+  document.getElementById("as-drawer").onclick = () => {
+    state.game.active_raven_notice = notice("Tom", false); refresh(); };
+  document.getElementById("as-other").onclick = () => {
+    state.game.active_raven_notice = notice("Alex", false); refresh(); };
+  document.getElementById("as-revealed").onclick = () => {
+    state.game.active_raven_notice = notice("Tom", true); refresh(); };
+
+  refresh();
+  window.__prompts = { state, refresh };
+</script>

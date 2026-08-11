@@ -12,7 +12,7 @@ from pathlib import Path
 from server.game.board import Board
 from server.game.cards import Card
 from server.game.rng import Rng
-from server.game.rules import _resolve_landing, _GLOBAL_RNG
+from server.game.rules import _resolve_landing, apply, _GLOBAL_RNG
 from server.game.state import GameState, Phase, PlayerState, Status, TurnContext
 
 
@@ -48,13 +48,30 @@ def kinds_of(evs) -> list[str]:
     return [e["kind"] for e in evs]
 
 
+def land_and_reveal(state: GameState, player: PlayerState):
+    """Land on the square, then have the drawer turn the raven card over.
+
+    Raven effects deliberately don't fire on landing any more — the card is
+    dealt face-down and resolves only when the drawer reveals it, so nobody
+    sees a piece move before they've seen why.
+    """
+    evs = _resolve_landing(state, BOARD, player)
+    if state.turn.pending_raven is not None:
+        _, more = apply(
+            state, "reveal_raven_notice", {"username": player.username},
+            board=BOARD, rng=_GLOBAL_RNG.get(),
+        )
+        evs = evs + more
+    return evs
+
+
 def test_summons_to_the_museum_draws_a_tower_card():
     player = make_player()
     state = make_state(player)
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("go_to_location", location="museum")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.museum_space
     assert "tower_card_drawn" in kinds_of(evs)
@@ -68,7 +85,7 @@ def test_summons_to_devereux_grants_the_coin():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("go_to_location", location="devereux_tower")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.devereux_space
     assert "coin_picked_up" in kinds_of(evs)
@@ -80,7 +97,7 @@ def test_shop_for_film_summons_and_resolves_the_shop():
     state = make_state(player)
     state.raven_draw = [raven("shop_for_film")]
 
-    _resolve_landing(state, BOARD, player)
+    land_and_reveal(state, player)
 
     assert player.position == BOARD.data.shop_space
 
@@ -90,7 +107,7 @@ def test_governors_tea_starts_the_accreditation_trial_at_queens_house():
     state = make_state(player)
     state.raven_draw = [raven("governors_tea")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.queens_house_space
     assert "trying_accreditation" in kinds_of(evs)
@@ -115,7 +132,7 @@ def test_summons_onto_a_raven_square_does_not_draw_a_second_raven_card():
         raven("go_to_location", location=dest),
     ]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
 
     assert player.position == dest
     assert kinds_of(evs).count("raven_card_drawn") == 1
@@ -129,7 +146,7 @@ def test_summons_to_the_broad_arrow_tower_still_costs_your_weapons():
     state = make_state(player)
     state.raven_draw = [raven("go_to_location", location="broad_arrow_tower")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
     ev = next(e for e in evs if e["kind"] == "weapons_surrendered")
 
     assert player.position == "ww29_broad_arrow"
@@ -144,7 +161,7 @@ def test_punishment_cards_do_not_resolve_their_destination():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("pecked_by_ravens")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.hospital_space
     assert player.status == Status.HOSPITAL

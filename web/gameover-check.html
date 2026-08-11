@@ -1,0 +1,72 @@
+<meta charset="utf-8">
+<title>Game over screen check</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>
+  body{background:#1a1a1a;color:#f0ead6;font-family:Georgia,serif;margin:0}
+  #bar{position:fixed;top:6px;left:6px;z-index:100;display:flex;gap:.4rem}
+  #bar button{font-size:.72rem;padding:.2rem .5rem}
+</style>
+<div id="bar">
+  <button id="fast">fast win (you)</button>
+  <button id="slow">slow win (someone else)</button>
+</div>
+<div id="slot"></div>
+<script type="module">
+  import { renderGameOverScreen } from "/src/ui/gameover.ts";
+
+  const ws = { on: () => {}, send: async () => {} };
+  const c = (id, name, cat, val) => ({ id, kind:"tower", name, category:cat, value:val });
+
+  const players = [
+    { username:"Alex", color:"#c0392b", position:"out_18_m3_cradle_escape",
+      hand:[c("a1","Crossbow","weapon",10), c("a2","Rope","traversal",0),
+            c("a3","Disguise","utility",0)],
+      hand_size:3, has_coin:true, jewels:["crown_st_edward","orb"],
+      accredited:true, trying_accreditation:false, status:"NORMAL",
+      status_turns_remaining:0, miss_next_turn:false, connected:true, escaped:true },
+    { username:"Bo", color:"#2980b9", position:"ww40",
+      hand:[c("b1","Mace","weapon",2), c("b2","File","burglary",2),
+            c("b3","Sanctuary","utility",0), c("b4","Dynamite","burglary",5)],
+      hand_size:4, has_coin:false, jewels:["sceptre"],
+      accredited:true, trying_accreditation:false, status:"HOSPITAL",
+      status_turns_remaining:0, miss_next_turn:true, connected:true, escaped:false },
+    { username:"Cass", color:"#27ae60", position:"iw_rack",
+      hand:[], hand_size:0, has_coin:false, jewels:[],
+      accredited:false, trying_accreditation:false, status:"RACKED",
+      status_turns_remaining:2, miss_next_turn:false, connected:true, escaped:false },
+  ];
+
+  const stats = {
+    Alex: { turns_taken:24, steps_taken:181, doubles_rolled:5, tower_cards_drawn:11,
+            raven_cards_drawn:4, jewel_attempts:3, jewels_collected:2, coins_picked_up:2,
+            fights_won:2, fights_lost:0, turns_lost:1, times_locked_up:0 },
+    Bo:   { turns_taken:23, steps_taken:164, doubles_rolled:3, tower_cards_drawn:9,
+            raven_cards_drawn:6, jewel_attempts:4, jewels_collected:1, coins_picked_up:1,
+            fights_won:1, fights_lost:2, turns_lost:3, times_locked_up:1 },
+    Cass: { turns_taken:22, steps_taken:97, doubles_rolled:2, tower_cards_drawn:6,
+            raven_cards_drawn:8, jewel_attempts:1, jewels_collected:0, coins_picked_up:0,
+            fights_won:0, fights_lost:1, turns_lost:6, times_locked_up:3 },
+  };
+
+  const state = { you:"Alex", board:null, log:[], game:{
+    mode:"fast", phase:"GAME_OVER", players, turn_order:["Alex","Bo","Cass"],
+    current_turn_index:0, winner:"Alex", final_stats:stats,
+    finished_slow_order:[], jewels_available:{}, loose_jewels:{}, coins_available:3,
+    warders:[], combat:null, active_raven_notice:null,
+    turn:{ roll:[], consecutive_doubles:0, extra_turns_queued:0, visited_this_turn:[],
+           cards_played_this_turn:[], pending_move:null, pending_raven:null,
+           pending_jewel:null, pending_split:null, pending_card_change:null },
+  }};
+
+  const screen = renderGameOverScreen(document.getElementById("slot"));
+  const show = () => {
+    // The screen builds once per game-over; force a rebuild between variants.
+    state.game.phase = "TURN_END"; screen.update(state, ws);
+    state.game.phase = "GAME_OVER"; screen.update(state, ws);
+  };
+  document.getElementById("fast").onclick = () => {
+    state.you = "Alex"; state.game.mode = "fast"; state.game.winner = "Alex"; show(); };
+  document.getElementById("slow").onclick = () => {
+    state.you = "Cass"; state.game.mode = "slow"; state.game.winner = "Alex"; show(); };
+  show();
+</script>

@@ -25,13 +25,13 @@ def redact_game_for_player(game: GameState, username: Optional[str]) -> dict[str
     """
     data = game.model_dump()
 
-    # Players
+    # Players. Once the game is over there's nothing left to protect, and the
+    # end-of-game screen shows everyone's final hand — so stop redacting.
+    game_over = getattr(game.phase, "value", game.phase) == "GAME_OVER"
     for p in data.get("players", []):
-        if p.get("username") != username:
-            p["hand_size"] = len(p.get("hand", []))
+        p["hand_size"] = len(p.get("hand", []))
+        if not game_over and p.get("username") != username:
             p["hand"] = []
-        else:
-            p["hand_size"] = len(p.get("hand", []))
 
     # Combat
     combat = data.get("combat")

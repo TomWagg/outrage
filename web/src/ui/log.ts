@@ -219,7 +219,7 @@ function formatEntry(e: LogEntry, me: string | null): string {
     case "three_doubles_bloody_tower":
       return `${p.player} rolled three doubles — sent to the Bloody Tower!`;
     case "pardoned":
-      return p.kind === "rack"
+      return p.pardon_kind === "rack"
         ? `${p.player} produces a Rack Pardon — released!`
         : `${p.player} produces a Royal Pardon — released!`;
     case "disguise_played":

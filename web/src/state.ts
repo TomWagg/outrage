@@ -106,6 +106,9 @@ export interface RavenNotice {
   effect_key: string;
   drawer: string;
   params: Record<string, unknown>;
+  /** Turned face-up by the drawer. Server state, so the table flips together
+   *  — and the card's effect doesn't fire until it's true. */
+  revealed: boolean;
 }
 
 export interface PendingCardChange {
@@ -148,6 +151,8 @@ export interface GameSnapshot {
   raven_draw_count: number;
   raven_discard_count: number;
   winner: string | null;
+  /** Per-player tallies for the results screen, filled in when the game ends. */
+  final_stats?: Record<string, Record<string, number>>;
   finished_slow_order: string[];
   firecrackers_affected?: string[];
   active_raven_notice?: RavenNotice | null;
@@ -195,6 +200,7 @@ export interface BoardData {
   royal_armouries_space: string;
   shop_space: string;
   barracks_space: string;
+  warder_posts: { id: string; space_id: string; blocks_space_ids?: string[] }[];
   raven_deck_space: string;
   metallicity_destination_ids: string[];
   bench_space_ids: string[];

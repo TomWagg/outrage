@@ -369,6 +369,51 @@ export function jewelIconPaths(jewelId: string): string {
   return JEWEL_ICONS[jewelId] ?? "";
 }
 
+/** A jewel as it looks on the board: dark emblem on a gold disc. */
+export function jewelDisc(jewelId: string, size = 28): string {
+  const paths = jewelIconPaths(jewelId);
+  if (!paths) return "";
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"
+       class="jewel-disc" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="11" fill="#f1c40f" stroke="#b7950b" stroke-width="1.4"/>
+    <g transform="translate(4.8 4.8) scale(0.6)" fill="#3a2c00" stroke="none">${paths}</g>
+  </svg>`;
+}
+
+/**
+ * The jewel emblem on its own, in currentColor — for places that want the
+ * shape rather than the board token (the results banner, for one).
+ */
+export function jewelEmblem(jewelId: string, size = 48): string {
+  const paths = jewelIconPaths(jewelId);
+  if (!paths) return "";
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"
+       fill="currentColor" stroke="none" aria-hidden="true" focusable="false">${paths}</svg>`;
+}
+
+/** The Devereux coin, drawn to match the jewel discs rather than an emoji. */
+export function coinDisc(size = 28): string {
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}"
+       class="coin-disc" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="11" fill="#e8c34a" stroke="#a8842a" stroke-width="1.4"/>
+    <circle cx="12" cy="12" r="7.6" fill="none" stroke="#a8842a" stroke-width="1"/>
+    <path d="M9.6 15.6 V9.2 l2.4 2.1 L14 8.4 l1.6 2.9 l2.2 -2.1 v6.4 Z"
+          transform="translate(-1.6 0.3) scale(0.86)" fill="#7a5f18"/>
+  </svg>`;
+}
+
+/** Human name for a jewel id. */
+export function jewelLabel(jewelId: string): string {
+  switch (jewelId) {
+    case "crown_st_edward": return "St Edward's Crown";
+    case "crown_prince_of_wales": return "Prince of Wales's Crown";
+    case "orb": return "The Orb";
+    case "sceptre": return "The Sceptre";
+    case "sword": return "The Sword";
+    default: return jewelId;
+  }
+}
+
 /** Neutral fallback so an unmapped card looks plain rather than broken. */
 const FALLBACK_ICON = `
   <rect x="5" y="3.5" width="14" height="17" rx="2"/>

@@ -99,6 +99,13 @@ def test_combat_resolved_reports_the_totals_and_the_spoils():
     assert p["coin_overflowed"] is False
     assert p["cards_drawn"] == 2
     assert p["loser_sent_to"] == BOARD.data.hospital_space
+    # The committed cards ride along so every client can replay the reveal.
+    assert [c["id"] for c in p["attacker_cards"]] == ["a1", "a2"]
+    assert [c["id"] for c in p["defender_cards"]] == ["d1"]
+    assert p["attacker_cards"][0]["value"] == 5
+    # And the winner's replacements are named so they alone can see the faces.
+    assert len(p["winner_drew"]) == 2
+    assert set(p["winner_drew"]) <= {c.id for c in state.player("atk").hand}
     # And the spoils actually moved.
     assert state.player("atk").jewels == ["sword"]
     assert state.player("atk").has_coin

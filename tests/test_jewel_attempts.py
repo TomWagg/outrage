@@ -52,6 +52,18 @@ def a_raven_trigger_space() -> str:
     return next(s.id for s in BOARD.data.spaces if s.kind == "raven_trigger")
 
 
+def land_and_reveal(state, player):
+    """Land, then turn the raven card over — effects fire on reveal, not on landing."""
+    evs = _resolve_landing(state, BOARD, player)
+    if state.turn.pending_raven is not None:
+        _, more = apply(
+            state, "reveal_raven_notice", {"username": player.username},
+            board=BOARD, rng=_GLOBAL_RNG.get(),
+        )
+        evs = evs + more
+    return evs
+
+
 def test_go_to_jewel_view_offers_the_attempt_instead_of_ending_the_turn():
     player = make_player(a_raven_trigger_space())
     state = make_state(player)
@@ -60,7 +72,7 @@ def test_go_to_jewel_view_offers_the_attempt_instead_of_ending_the_turn():
     jewel_space = state.jewels_available["sword"]
     state.raven_draw = [raven_jewel_view("sword")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
     kinds = [e["kind"] for e in evs]
 
     assert "raven_card_drawn" in kinds
@@ -161,7 +173,7 @@ def test_go_to_jewel_view_for_a_taken_jewel_just_ends_the_turn():
     state.jewels_available.pop("sword")
     state.raven_draw = [raven_jewel_view("sword")]
 
-    evs = _resolve_landing(state, BOARD, player)
+    evs = land_and_reveal(state, player)
     kinds = [e["kind"] for e in evs]
 
     assert "jewel_already_taken" in kinds

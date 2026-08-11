@@ -72,4 +72,6 @@
 
   document.getElementById("log").textContent =
     out.join("\n") + `\n\n${out.filter(l => l.startsWith("FAIL")).length} failures`;
+
+  window.__reveal = { state, handlers, notif, card };
 </script>

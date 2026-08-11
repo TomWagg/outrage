@@ -183,6 +183,10 @@ class RavenNotice(BaseModel):
     effect_key: str
     drawer: str
     params: dict[str, Any] = Field(default_factory=dict)
+    # The card lands face-down. Only the drawer may turn it over, and the
+    # effect does not fire until they do — so the table sees the card before
+    # anyone's piece moves. Shared state, so everyone flips together.
+    revealed: bool = False
 
 
 class PendingMove(BaseModel):
@@ -243,6 +247,31 @@ class LogEntry(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class GameStats(BaseModel):
+    """Per-player tallies for a single game, for the end-of-game screen.
+
+    Derived by folding the event log at game end rather than by incrementing
+    counters all over the rule engine — the log is already the authoritative
+    record of everything that happened, and one fold is far easier to keep
+    honest than twenty scattered ``+= 1``s.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    turns_taken: int = 0
+    steps_taken: int = 0
+    doubles_rolled: int = 0
+    tower_cards_drawn: int = 0
+    raven_cards_drawn: int = 0
+    jewel_attempts: int = 0
+    jewels_collected: int = 0
+    coins_picked_up: int = 0
+    fights_won: int = 0
+    fights_lost: int = 0
+    turns_lost: int = 0
+    times_locked_up: int = 0
+
+
 # ---------- GameState ------------------------------------------------------
 
 
@@ -291,6 +320,9 @@ class GameState(BaseModel):
     # Win results
     winner: Optional[str] = None
     finished_slow_order: list[str] = Field(default_factory=list)
+    # Filled in once, when the game ends. Sent in the snapshot so a player who
+    # reconnects to a finished game still sees the full result.
+    final_stats: dict[str, GameStats] = Field(default_factory=dict)
 
     # --- helpers ---------------------------------------------------------
 

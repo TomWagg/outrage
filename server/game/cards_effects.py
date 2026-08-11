@@ -189,7 +189,7 @@ def _disguise(state, player, params, *, board, rng, **kw):
 def _royal_pardon(state, player, params, *, board, rng, **kw):
     if player.status in (Status.IMPRISONED, Status.TORTURED):
         _clear_confinement(player)
-        return state, [_event("pardoned", player=player.username, kind="royal")]
+        return state, [_event("pardoned", player=player.username, pardon_kind="royal")]
     raise EffectError("Royal Pardon only works for prison or torture")
 
 
@@ -197,7 +197,7 @@ def _royal_pardon(state, player, params, *, board, rng, **kw):
 def _rack_pardon(state, player, params, *, board, rng, **kw):
     if player.status == Status.RACKED:
         _clear_confinement(player)
-        return state, [_event("pardoned", player=player.username, kind="rack")]
+        return state, [_event("pardoned", player=player.username, pardon_kind="rack")]
     raise EffectError("Rack Pardon only works for the Rack")
 
 
@@ -323,7 +323,7 @@ def _go_to_location(state, player, params, *, board, rng, **kw):
     loc = _location_from_params(params, board)
     if params.get("location") == "player_choice" and not params.get("chosen"):
         # Wait for input.
-        return state, [_event("raven_needs_input", kind="choose_location")]
+        return state, [_event("raven_needs_input", input_kind="choose_location")]
     if loc is None:
         # Resolve from chosen parameter.
         loc = params.get("chosen")
@@ -346,13 +346,31 @@ def _go_to_jewel_view(state, player, params, *, board, rng, **kw):
     return state, evs
 
 
+def free_warder_posts(state: GameState, board: Board) -> list[str]:
+    """Post ids with no warder standing on them.
+
+    A post holds one warder; calling a second to the same post would stack them
+    invisibly and make the block un-clearable, so callers must pick from here.
+    """
+    taken = {w.location for w in state.warders if w.location != board.data.barracks_space}
+    return [wp.id for wp in board.data.warder_posts if wp.space_id not in taken]
+
+
 @register("call_warder_to_post")
 def _call_warder(state, player, params, *, board, rng, **kw):
     post = params.get("post")
+    free = free_warder_posts(state, board)
     if post == "chooser" and not params.get("chosen_post"):
-        return state, [_event("raven_needs_input", kind="choose_post")]
-    if post == "chooser":
+        if not free:
+            return state, [_event("no_free_warder_posts")]
+        if len(free) == 1:
+            post = free[0]          # nothing to choose between
+        else:
+            return state, [_event("raven_needs_input", input_kind="choose_post", posts=free)]
+    elif post == "chooser":
         post = params["chosen_post"]
+        if post not in free:
+            raise EffectError(f"That post already has a warder: {post}")
     # Find warder in barracks; require input if multiple choices and no ``warder_id`` supplied.
     in_barracks = [w for w in state.warders if w.location == board.data.barracks_space]
     if not in_barracks:
@@ -366,6 +384,9 @@ def _call_warder(state, player, params, *, board, rng, **kw):
             break
     if post_space is None:
         raise EffectError(f"Unknown warder post: {post}")
+    if post not in free:
+        # A fixed-post card whose post is already manned: nothing to do.
+        return state, [_event("warder_post_occupied", post=post, space=post_space)]
     warder.location = post_space
     return state, [_event("warder_moved", warder=warder.id, dst=post_space)]
 
@@ -380,7 +401,7 @@ def _return_warder(state, player, params, *, board, rng, **kw):
         if len(out_of_barracks) == 1:
             chosen = out_of_barracks[0].id
         else:
-            return state, [_event("raven_needs_input", kind="choose_warder")]
+            return state, [_event("raven_needs_input", input_kind="choose_warder")]
     for w in state.warders:
         if w.id == chosen:
             w.location = board.data.barracks_space
@@ -404,7 +425,7 @@ def _bench(state, player, params, *, board, rng, **kw):
         if len(board.data.bench_space_ids) == 1:
             chosen = board.data.bench_space_ids[0]
         else:
-            return state, [_event("raven_needs_input", kind="choose_bench")]
+            return state, [_event("raven_needs_input", input_kind="choose_bench")]
     if chosen not in board.data.bench_space_ids:
         raise EffectError(f"Not a valid bench: {chosen}")
     evs = _send_to(state, player, chosen, board)
@@ -427,7 +448,7 @@ def _photo(state, player, params, *, board, rng, **kw):
         if len(candidates) == 1:
             chosen = next(iter(candidates))
         else:
-            return state, [_event("raven_needs_input", kind="choose_photo_space", candidates=sorted(candidates))]
+            return state, [_event("raven_needs_input", input_kind="choose_photo_space", candidates=sorted(candidates))]
     if chosen not in candidates:
         raise EffectError(f"Not adjacent to an occupied post: {chosen}")
     return state, _summon_to(state, player, chosen, board)

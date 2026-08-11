@@ -83,6 +83,23 @@ function hideTooltip(): void {
   if (_tooltipEl) _tooltipEl.style.display = "none";
 }
 
+/**
+ * Dismiss the board tooltip from outside the renderer.
+ *
+ * The tooltip is only hidden by mousemove/mouseleave on the board SVG, so a
+ * modal opening over the board leaves the last tooltip stranded on screen —
+ * the pointer never moves off the square that spawned it. Anything that covers
+ * the board should call this as it opens.
+ */
+export function hideBoardTooltip(): void {
+  hideTooltip();
+  // Don't rely on the cached reference: a hot module reload during development
+  // leaves the old instance owning the live element, so hide by query too.
+  for (const el of document.querySelectorAll<HTMLElement>(".board-tooltip")) {
+    el.style.display = "none";
+  }
+}
+
 // Fill colours keyed by space kind. Anything not listed falls back to a
 // region-based default.
 // Values use CSS custom properties so the user can override them in main.css.

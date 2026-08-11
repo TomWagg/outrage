@@ -23,6 +23,7 @@ import { ravenCardCopy, towerCardCopy } from "./card_descriptions.js";
 import {
   ravenCardBack, ravenCardIcon, towerCardBack, towerCardIcon,
 } from "./card_art.js";
+import { hideBoardTooltip } from "../board/render.js";
 
 interface TowerModal {
   cardId: string;
@@ -77,9 +78,6 @@ export function mountNotifications(
     renderModal();
   }
 
-  // Raven notices are shared state on the server, so "have I turned this one
-  // over?" is tracked locally per card id.
-  const revealedRavenIds = new Set<string>();
   function popTowerModal(cardId: string): void {
     const idx = towerQueue.findIndex((m) => m.cardId === cardId);
     if (idx >= 0) towerQueue.splice(idx, 1);
@@ -110,21 +108,25 @@ export function mountNotifications(
 
   // ---- Render -------------------------------------------------------------
   function renderModal(): void {
+    const hadModal = modalSlot.childElementCount > 0;
     modalSlot.innerHTML = "";
     const game = state.game;
+    // A modal covering the board strands the last board tooltip on screen: the
+    // pointer never moves off the square that spawned it, so nothing hides it.
+    const opening = () => { if (!hadModal) hideBoardTooltip(); };
 
     // Raven modal takes precedence — public, blocking-style.
     const notice = game?.active_raven_notice ?? null;
     if (notice) {
-      modalSlot.appendChild(renderRavenModal(
-        notice, ws, state.you,
-        revealedRavenIds.has(notice.card_id),
-        () => { revealedRavenIds.add(notice.card_id); renderModal(); },
-      ));
+      opening();
+      // Reveal is server state, not a local flip: everyone turns the card over
+      // together, and the effect doesn't fire until they do.
+      modalSlot.appendChild(renderRavenModal(notice, ws, state.you));
       return;
     }
     // Then any queued tower modals (drawer-only).
     if (towerQueue.length > 0) {
+      opening();
       const top = towerQueue[0];
       modalSlot.appendChild(renderTowerModal(
         top,
@@ -302,7 +304,7 @@ export function mountNotifications(
     if (p?.player) pushToast(`${p.player} slipped past in disguise.`, "info");
   });
   ws.on("pardoned", (p: any) => {
-    if (p?.player) pushToast(`${p.player} pardoned (${p.kind ?? "?"}).`, "good");
+    if (p?.player) pushToast(`${p.player} pardoned (${p.pardon_kind ?? "?"}).`, "good");
   });
   ws.on("framed", (p: any) => {
     if (p?.framer && p?.framed)
@@ -384,14 +386,19 @@ export function mountNotifications(
  * The flip itself is a CSS keyframe gated on ``.is-revealed``, so there's no JS
  * timer to leak if the modal is dismissed mid-animation.
  */
-function flipCard(faceHtml: string, flavor: "tower" | "raven", revealed: boolean): string {
+function flipCard(
+  faceHtml: string,
+  flavor: "tower" | "raven",
+  revealed: boolean,
+  canReveal = true,
+): string {
   const crest = flavor === "raven" ? ravenCardBack(72) : towerCardBack(72);
   const backLabel = flavor === "raven" ? "Raven" : "Tower";
   return `
     <div class="notif-card-flip">
       <div class="notif-card-inner${revealed ? " is-revealed" : ""}">
         <button type="button" class="notif-card-back notif-card-back-${flavor}"
-                data-action="reveal" ${revealed ? "disabled" : ""}
+                data-action="reveal" ${revealed || !canReveal ? "disabled" : ""}
                 aria-label="Turn the card over">
           <span class="notif-card-crest">${crest}</span>
           <span class="notif-card-back-label">${backLabel}</span>
@@ -468,12 +475,29 @@ function renderRavenModal(
   notice: RavenNotice,
   ws: WsClient,
   you: string | null,
-  revealed: boolean,
-  onReveal: () => void,
 ): HTMLElement {
   const copy = ravenCardCopy(notice.effect_key, notice.params);
+  const revealed = notice.revealed;
+  const isDrawer = you === notice.drawer;
   const wrap = document.createElement("div");
   wrap.className = "notif-modal-backdrop";
+
+  // Only the drawer turns their own card over; everyone else waits and then
+  // sees the same face at the same moment.
+  const foot = revealed
+    ? modalFoot(true, "Dismiss for everyone",
+        isDrawer ? "You drew this." : "Anyone can dismiss when they're ready.")
+    : isDrawer
+      ? `<div class="notif-modal-foot">
+           <button class="notif-dismiss" data-action="reveal">Reveal</button>
+           <span class="notif-modal-hint">Turn it over to see what happens.</span>
+         </div>`
+      : `<div class="notif-modal-foot">
+           <span class="notif-modal-hint" style="text-align:left">
+             Waiting for ${escapeHtml(notice.drawer)} to turn the card over…
+           </span>
+         </div>`;
+
   wrap.innerHTML = `
     <div class="notif-modal notif-modal-raven" role="dialog" aria-modal="true">
       <div class="notif-modal-header">Raven card triggered</div>
@@ -483,15 +507,15 @@ function renderRavenModal(
         icon: ravenCardIcon(notice.effect_key),
         description: copy.description,
         meta: `Drawn by ${notice.drawer}`,
-      }), "raven", revealed)}
-      ${modalFoot(
-        revealed,
-        "Dismiss for everyone",
-        you === notice.drawer ? "You drew this." : "Anyone can dismiss when they're ready.",
-      )}
+      }), "raven", revealed, isDrawer)}
+      ${foot}
     </div>
   `;
-  bindReveal(wrap, onReveal);
+  if (isDrawer && !revealed) {
+    bindReveal(wrap, () => {
+      ws.send("reveal_raven_notice", { username: you }).catch(() => {});
+    });
+  }
   wrap.querySelector<HTMLButtonElement>('[data-action="dismiss"]')?.addEventListener("click", () => {
     ws.send("dismiss_raven_notice", { card_id: notice.card_id }).catch(() => {
       // Silently swallow — the snapshot will reflect reality regardless.

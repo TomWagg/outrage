@@ -1,0 +1,97 @@
+<meta charset="utf-8">
+<title>Combat UI check</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>
+  body{background:#1a1a1a;color:#f0ead6;font-family:Georgia,serif;padding:1rem;margin:0}
+  #panel{position:fixed;top:8px;left:8px;z-index:50;display:flex;gap:.4rem;flex-wrap:wrap;
+         background:#222;padding:.5rem;border:1px solid #444;border-radius:6px}
+  #panel button{font-size:.75rem;padding:.25rem .5rem}
+  #who{font-size:.75rem;color:#8f8;margin-left:.5rem;align-self:center}
+</style>
+<div id="panel">
+  <button data-as="atk">view as attacker (Alex)</button>
+  <button data-as="def">view as defender (Bo)</button>
+  <button data-as="spec">view as spectator (Cass)</button>
+  <button id="phase-atk">phase: attacker_selecting</button>
+  <button id="phase-def">phase: defender_selecting</button>
+  <button id="phase-spec">phase: defender_specials</button>
+  <button id="resolve">fire combat_resolved</button>
+  <span id="who"></span>
+</div>
+<div id="slot"></div>
+<script type="module">
+  import { renderCombatModal } from "/src/ui/combat.ts";
+
+  const handlers = new Map();
+  const ws = { on: (k, fn) => handlers.set(k, fn), send: async (k, p) => console.log("send", k, p) };
+
+  const w = (id, name, value, extra = {}) =>
+    ({ id, kind: "tower", name, category: "weapon", value, ...extra });
+
+  const alexHand = [w("a1","Crossbow",10), w("a2","Sword",5), w("a3","Dagger",3),
+                    w("a4","Mace",2), w("a5","Brace of Pistols",15)];
+  const boHand = [w("d1","Suit of Armour",8,{defender_only:true}), w("d2","Mace",2),
+                  { id:"d3", kind:"tower", name:"Sanctuary", category:"utility", value:0,
+                    effect_key:"sanctuary" }];
+  // What the winner drew — only in the winner's own hand, as after redaction.
+  const drawn = [w("n1","Dynamite",5), { id:"n2", kind:"tower", name:"Rope",
+                  category:"traversal", value:0 }];
+
+  const state = { you: "Alex", game: {
+    phase: "COMBAT",
+    players: [
+      { username:"Alex", hand: [...alexHand, ...drawn], hand_size: 7 },
+      { username:"Bo",   hand: boHand, hand_size: 3 },
+      { username:"Cass", hand: [], hand_size: 4 },
+    ],
+    combat: {
+      attacker:"Alex", defender:"Bo", space_id:"ww10",
+      attacker_cards: [], defender_cards: [],
+      attacker_committed:false, defender_committed:false,
+      phase:"attacker_selecting", sanctuary_cancelled:false,
+      mass_accretor_played:false, winner:null, resolved_events:[],
+    },
+    active_raven_notice: null,
+  }};
+
+  let refresh = () => {};
+  const modal = renderCombatModal(document.getElementById("slot"), ws, () => refresh());
+  refresh = () => modal.update(state, ws);
+
+  const setWho = () => document.getElementById("who").textContent =
+    `you = ${state.you} · phase = ${state.game.combat?.phase ?? "(resolved)"}`;
+
+  document.querySelectorAll("[data-as]").forEach(b => b.onclick = () => {
+    state.you = { atk:"Alex", def:"Bo", spec:"Cass" }[b.dataset.as];
+    setWho(); refresh();
+  });
+  const setPhase = (p, atk = [], def = []) => {
+    state.game.phase = "COMBAT";
+    state.game.combat.phase = p;
+    state.game.combat.attacker_cards = atk;
+    state.game.combat.defender_cards = def;
+    state.game.combat.attacker_cards_count = atk.length;
+    setWho(); refresh();
+  };
+  document.getElementById("phase-atk").onclick = () => setPhase("attacker_selecting");
+  document.getElementById("phase-def").onclick = () =>
+    setPhase("defender_selecting", [alexHand[0], alexHand[1]]);
+  document.getElementById("phase-spec").onclick = () =>
+    setPhase("defender_specials", [alexHand[0], alexHand[1]], [boHand[0]]);
+  document.getElementById("resolve").onclick = () => {
+    state.game.combat = null;
+    state.game.phase = "TURN_END";
+    handlers.get("combat_resolved")({
+      winner: "Alex", loser: "Bo", attacker: "Alex", defender: "Bo",
+      attacker_cards: [{id:"a1",name:"Crossbow",value:10},{id:"a2",name:"Sword",value:5}],
+      defender_cards: [{id:"d1",name:"Suit of Armour",value:8}],
+      attacker_total: 15, defender_total: 8, tie: false,
+      jewels_taken: ["sword"], coin_taken: true, coin_overflowed: false,
+      cards_drawn: 2, winner_drew: ["n1","n2"],
+      loser_sent_to: "iw_hospital",
+    });
+  };
+
+  setWho(); refresh();
+  window.__combat = { state, refresh, handlers };
+</script>

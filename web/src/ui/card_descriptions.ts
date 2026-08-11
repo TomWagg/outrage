@@ -50,7 +50,7 @@ export const TOWER_CARDS: Record<string, CardCopy> = {
   },
   Sword: {
     title: "Sword",
-    description: "Weapon, value 5. Solid mid-range combat card.",
+    description: "Weapon, value 5. Solid combat card.",
   },
   Dagger: {
     title: "Dagger",
@@ -76,11 +76,11 @@ export const TOWER_CARDS: Record<string, CardCopy> = {
   },
   Disguise: {
     title: "Disguise",
-    description: "Escape Bloody / Beauchamp prison (not torture), OR slip past a Yeoman Warder.",
+    description: "Escape prison (not torture or rack), OR slip past a Yeoman Warder.",
   },
   "Royal Pardon": {
     title: "Royal Pardon",
-    description: "Free yourself from Prison or Torture. Does NOT clear the Rack.",
+    description: "Free yourself from Prison or Torture. Does NOT get you out of the Rack.",
   },
   "Rack Pardon": {
     title: "Rack Pardon",
@@ -159,7 +159,7 @@ export function ravenCardCopy(
       const label = LOCATION_LABELS[loc] ?? loc.replace(/_/g, " ") ?? "a location";
       return {
         title: "Summons",
-        description: `Go to ${label}. You may opt out and forfeit your turn instead.`,
+        description: `Go to ${label}. You may opt out and forfeit a turn instead.`,
       };
     }
     case "go_to_jewel_view": {
@@ -175,7 +175,7 @@ export function ravenCardCopy(
       const label = POST_LABELS[post] ?? post;
       return {
         title: "Warder Called",
-        description: `A Yeoman Warder is pulled from the Barracks to ${label}.`,
+        description: `A Yeoman Warder is deployed from the Barracks to ${label}.`,
       };
     }
     case "return_warder_to_barracks":
@@ -186,7 +186,7 @@ export function ravenCardCopy(
     case "pecked_by_ravens":
       return {
         title: "Pecked by Ravens",
-        description: "Off to hospital — miss your next turn.",
+        description: "Off to hospital with you peasant — miss your next turn.",
       };
     case "rest_on_bench":
       return {
@@ -211,7 +211,7 @@ export function ravenCardCopy(
     case "ghost":
       return {
         title: "Ghost",
-        description: "Spooked! Go to the Chapel Royal and miss your next turn.",
+        description: "Spooked by the Ghost of Anne Boleyn! Go to the Chapel Royal and miss your next turn.",
       };
     case "queens_birthday": {
       const today = new Date();
@@ -226,12 +226,12 @@ export function ravenCardCopy(
     case "lost":
       return {
         title: "Lost",
-        description: "You wandered the wrong way — go to Queen's House.",
+        description: "You wandered the wrong way — go to Queen's House to ask for directions.",
       };
     case "chief_yeoman_passes":
       return {
         title: "Chief Yeoman Passes",
-        description: "The Chief Yeoman tosses you a token — draw a tower card.",
+        description: "The Chief Yeoman passes you by — draw a tower card.",
       };
     case "bowyer_questioning":
       return {
@@ -241,7 +241,7 @@ export function ravenCardCopy(
     case "shop_for_film":
       return {
         title: "Shop for Film",
-        description: "Make a quick errand — go to the Shop.",
+        description: "Oh no your camera is out of film! Time for a quick errand — go to the Shop.",
       };
     case "governors_tea":
       return {
@@ -256,7 +256,7 @@ export function ravenCardCopy(
     case "rack_of_torment":
       return {
         title: "The Rack of Torment",
-        description: "Sent straight to the Rack.",
+        description: "Straight to the Rack with you peasant!",
       };
     case "metallicity":
       return {
