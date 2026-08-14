@@ -27,10 +27,6 @@ import { hideBoardTooltip } from "../board/render.js";
 
 interface TowerModal {
   cardId: string;
-  cardName: string;
-  /** Combat / burglary value, when the card has one. */
-  value: number;
-  category: string | null;
   /** Flipped face-up by the player. Lives here, not in the DOM, so a snapshot
    *  arriving mid-modal doesn't turn the card back over. */
   revealed: boolean;
@@ -69,12 +65,10 @@ export function mountNotifications(
   // and we never want the same modal twice in the queue.
   const queuedIds = new Set<string>();
 
-  function pushTowerModal(
-    cardId: string, cardName: string, value: number, category: string | null,
-  ): void {
+  function pushTowerModal(cardId: string): void {
     if (queuedIds.has(cardId)) return;
     queuedIds.add(cardId);
-    towerQueue.push({ cardId, cardName, value, category, revealed: false });
+    towerQueue.push({ cardId, revealed: false });
     renderModal();
   }
 
@@ -130,6 +124,7 @@ export function mountNotifications(
       const top = towerQueue[0];
       modalSlot.appendChild(renderTowerModal(
         top,
+        cardFromId(state.game, top.cardId),
         () => popTowerModal(top.cardId),
         () => { top.revealed = true; renderModal(); },
       ));
@@ -151,12 +146,9 @@ export function mountNotifications(
     const drawer = p?.player as string | undefined;
     if (!drawer) return;
     if (drawer === state.you) {
-      // Look up the card name from your hand (or recently-discarded if it was
-      // a raven side-effect that auto-played). Fall back to the id.
-      const cardId = String(p?.card ?? "");
-      const card = cardFromId(state.game, cardId);
-      const cardName = card?.name ?? slugToName(cardId);
-      pushTowerModal(cardId, cardName, card?.value ?? 0, card?.category ?? null);
+      // Only the id: the card's details are resolved at render time, because
+      // events arrive *before* the snapshot and the card isn't in our hand yet.
+      pushTowerModal(String(p?.card ?? ""));
     } else {
       pushToast(`${drawer} drew a tower card.`, "tower");
     }
@@ -526,10 +518,15 @@ function renderRavenModal(
 
 function renderTowerModal(
   modal: TowerModal,
+  /** The card from the viewer's hand, once the snapshot has caught up. */
+  card: Card | null,
   onDismiss: () => void,
   onReveal: () => void,
 ): HTMLElement {
-  const copy = towerCardCopy(modal.cardName);
+  // Resolved per render, not once at queue time: the draw event beats the
+  // snapshot, so early on the card isn't in our hand and only the id is known.
+  const cardName = card?.name ?? slugToName(modal.cardId);
+  const copy = towerCardCopy(cardName);
   const wrap = document.createElement("div");
   wrap.className = "notif-modal-backdrop";
   wrap.innerHTML = `
@@ -538,8 +535,8 @@ function renderTowerModal(
       ${flipCard(cardFace({
         flavor: "tower",
         title: copy.title,
-        icon: towerCardIcon(modal.cardName),
-        value: valueLine(modal.category, modal.value),
+        icon: towerCardIcon(cardName),
+        value: valueLine(card?.category ?? null, card?.value ?? 0),
         description: copy.description,
       }), "tower", modal.revealed)}
       ${modalFoot(modal.revealed, "Dismiss", "")}

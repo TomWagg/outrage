@@ -16,11 +16,45 @@ export function renderControlsPanel(root: HTMLElement): { update: (state: Client
       <div id="turn-info" style="font-size:0.9rem;color:var(--muted);margin-bottom:0.5rem"></div>
       <div id="controls-row" style="display:flex;gap:0.4rem;flex-wrap:wrap"></div>
       <div id="pending-info" style="margin-top:0.5rem;font-size:0.85rem;color:var(--muted)"></div>
+      <div id="newgame-row" class="newgame-row"></div>
     </div>
   `;
   return {
     update: (state, ws) => updateControls(root, state, ws),
   };
+}
+
+/**
+ * "New game", behind a two-click confirm.
+ *
+ * Ending the game is destructive and the button sits next to ordinary turn
+ * actions, so it asks first — inline rather than via window.confirm, which is
+ * easy to dismiss on reflex and looks nothing like the rest of the UI.
+ *
+ * It ends the game as a *draw* rather than jumping straight to the lobby, so
+ * the results screen still comes up and everyone gets to read the stats.
+ */
+function renderNewGameButton(root: HTMLElement, you: string | null, ws: WsClient): void {
+  const slot = root.querySelector<HTMLElement>("#newgame-row")!;
+  slot.innerHTML = "";
+  if (!you) return;
+
+  const ask = button("New game…", () => {
+    slot.innerHTML = "";
+    const warn = document.createElement("div");
+    warn.className = "newgame-warn";
+    warn.textContent = "End this game now? It'll be recorded as a draw, and everyone sees the final stats.";
+    slot.appendChild(warn);
+    const confirmRow = document.createElement("div");
+    confirmRow.className = "newgame-confirm";
+    confirmRow.appendChild(button("Yes, end it", () =>
+      ws.send("end_game_draw", { username: you }).catch(noop),
+    ));
+    confirmRow.appendChild(button("Cancel", () => renderNewGameButton(root, you, ws)));
+    slot.appendChild(confirmRow);
+  });
+  ask.className = "newgame-btn";
+  slot.appendChild(ask);
 }
 
 function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): void {
@@ -31,6 +65,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   pending.textContent = "";
 
   const g = state.game;
+  root.querySelector<HTMLElement>("#newgame-row")!.innerHTML = "";
   if (!g) {
     info.textContent = "No game in progress.";
     return;
@@ -67,6 +102,10 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     return;
   }
 
+  // Available to everyone, whosever turn it is — abandoning the game isn't a
+  // turn action. Rendered last in the panel so it can't be hit by accident.
+  renderNewGameButton(root, you, ws);
+
   if (!isMyTurn) {
     pending.textContent = cur ? `Waiting for ${cur}…` : "";
     return;
@@ -99,6 +138,10 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       // roll. A Tower Pass can still buy an extra turn, hence the card buttons
       // below stay.
       const missing = !!me?.miss_next_turn;
+      // On trial at Queen's House: this roll decides accreditation, so say so
+      // and label the button for it. Driven off the player flag rather than a
+      // phase — Phase.ACCREDITATION_ATTEMPT is never actually assigned.
+      const onTrial = !missing && !!me?.trying_accreditation && !me?.accredited;
       if (missing) {
         const why = document.createElement("div");
         why.style.marginBottom = "0.4rem";
@@ -107,18 +150,21 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
         why.textContent = "You're missing this turn.";
         pending.appendChild(why);
       } else {
-        row.appendChild(button("Roll dice", () => ws.send("roll_dice", { username: you }).catch(noop)));
+        row.appendChild(button(
+          onTrial ? "Roll for accreditation" : "Roll dice",
+          () => ws.send("roll_dice", { username: you }).catch(noop),
+        ));
       }
       row.appendChild(button("End turn", () => ws.send("end_turn", { username: you }).catch(noop)));
-      if (g.phase === "ACCREDITATION_ATTEMPT" && me?.trying_accreditation) {
+      if (onTrial) {
         const tip = document.createElement("div");
         tip.style.marginTop = "0.4rem";
         tip.style.fontSize = "0.85rem";
         tip.style.color = "var(--muted)";
         tip.innerHTML =
-          `Accreditation trial: roll both dice.<br>` +
-          `<strong>Odd total</strong> → accredited (use the roll to move in the Inner Ward).<br>` +
-          `<strong>Even total</strong> → clerks send you away; turn ends.`;
+          `<strong style="color:var(--accent)">Accreditation trial at Queen's House.</strong><br>` +
+          `<strong>Odd total</strong> → accredited; use the roll to move freely in the Inner Ward.<br>` +
+          `<strong>Even total</strong> → the clerks send you away and your turn ends.`;
         pending.appendChild(tip);
       }
       // A failed theft leaves you standing on the jewel — offer another go

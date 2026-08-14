@@ -744,19 +744,25 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         const targetY = cy + dy;
         const prev = lastPieceCoords.get(p.username);
         // If we rendered this piece before and the target coords have moved,
-        // start the circle at the old coords and tween to the target.
+        // start the piece at the old coords and tween to the target.
         const startX = prev ? prev.x : targetX;
         const startY = prev ? prev.y : targetY;
-        const c = createSVG("circle", {
-          cx: String(startX),
-          cy: String(startY),
-          r: String(PIECE_RADIUS),
-          fill: p.color,
-          stroke: isTurn ? "#fff" : "#111",
-          "stroke-width": isTurn ? "2.5" : "1",
-        });
+
+        // Accreditation is visible in the token's shape: a triangle until the
+        // clerks are satisfied, a disc afterwards. The piece is a <g> moved by
+        // its transform so both shapes animate through the same code path.
+        const c = createSVG("g", { transform: `translate(${startX},${startY})` });
+        const shape = p.accredited
+          ? createSVG("circle", { cx: "0", cy: "0", r: String(PIECE_RADIUS) })
+          : createSVG("path", { d: trianglePath(PIECE_RADIUS * 1.18) });
+        shape.setAttribute("fill", p.color);
+        shape.setAttribute("stroke", isTurn ? "#fff" : "#111");
+        shape.setAttribute("stroke-width", isTurn ? "2.5" : "1");
+        shape.setAttribute("stroke-linejoin", "round");
+        c.appendChild(shape);
         const title = createSVG("title");
-        title.textContent = `${p.username}${isTurn ? " (to play)" : ""}`;
+        title.textContent = `${p.username}${isTurn ? " (to play)" : ""}` +
+          (p.accredited ? "" : " — not yet accredited");
         c.appendChild(title);
         pieceLayer.appendChild(c);
 
@@ -1041,6 +1047,19 @@ function spaceRect(
 }
 
 
+/**
+ * An upward-pointing equilateral triangle centred on (0, 0), for players who
+ * haven't been accredited yet. ``r`` is the circumradius, so it occupies about
+ * the same visual weight as the accredited disc.
+ */
+function trianglePath(r: number): string {
+  const pts = [0, 1, 2].map((i) => {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / 3;
+    return `${(Math.cos(a) * r).toFixed(2)} ${(Math.sin(a) * r).toFixed(2)}`;
+  });
+  return `M ${pts[0]} L ${pts[1]} L ${pts[2]} Z`;
+}
+
 function jewelName(id: string): string {
   switch (id) {
     case "crown_st_edward": return "St Edward's Crown";
@@ -1148,8 +1167,9 @@ function animatePiece(
     const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     const cx = x0 + (x1 - x0) * e;
     const cy = y0 + (y1 - y0) * e;
-    el.setAttribute("cx", String(cx));
-    el.setAttribute("cy", String(cy));
+    // The piece is a <g> holding either a disc or a triangle, so it moves by
+    // transform rather than cx/cy — one code path for both shapes.
+    el.setAttribute("transform", `translate(${cx},${cy})`);
     // Track current position so the next renderBoard starts from here.
     lastPieceCoords.set(username, { x: cx, y: cy });
     if (t < 1 && el.isConnected) {

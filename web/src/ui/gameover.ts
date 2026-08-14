@@ -90,17 +90,34 @@ function orderForDisplay(winner: string | null) {
 function banner(state: ClientState): string {
   const g = state.game!;
   const winner = g.winner;
-  const youWon = winner != null && winner === state.you;
+  const modeTag = `<span class="gameover-mode">${
+    g.mode === "fast" ? "Fast game" : "Slow game"}</span>`;
+
+  // No winner means the game was ended early — a draw, not a defeat.
+  if (!winner) {
+    return `
+      <div class="gameover-banner is-draw">
+        <div class="gameover-crown">${jewelEmblem("orb", 56)}</div>
+        <h1 class="gameover-title">A draw</h1>
+        <div class="gameover-sub">
+          The game was called before anyone got away with the Crown Jewels.
+          ${modeTag}
+        </div>
+      </div>
+    `;
+  }
+
+  const youWon = winner === state.you;
   const reason = g.mode === "fast"
     ? "escaped the Tower with a jewel and a coin"
     : "finished with the richest haul";
   return `
     <div class="gameover-banner${youWon ? " is-you" : ""}">
-      <div class="gameover-crown">${winner ? jewelEmblem("crown_st_edward", 60) : ""}</div>
-      <h1 class="gameover-title">${winner ? escapeHtml(winner) : "Nobody"} wins!</h1>
+      <div class="gameover-crown">${jewelEmblem("crown_st_edward", 60)}</div>
+      <h1 class="gameover-title">${escapeHtml(winner)} wins!</h1>
       <div class="gameover-sub">
         ${youWon ? "That's you — " : ""}${escapeHtml(reason)}.
-        <span class="gameover-mode">${g.mode === "fast" ? "Fast game" : "Slow game"}</span>
+        ${modeTag}
       </div>
     </div>
   `;

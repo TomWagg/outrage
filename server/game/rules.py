@@ -1679,6 +1679,22 @@ def _slow_winner(state: GameState) -> Optional[str]:
 # =========================================================================
 
 
+def _intent_end_game_draw(state, payload, *, board, rng):
+    """Abandon the game and call it a draw.
+
+    Any player may do this — it's how you start a fresh game without losing the
+    result. The game goes to GAME_OVER with no winner so the results screen
+    still shows everyone's haul and tallies; ``apply`` snapshots the stats.
+    """
+    if state.phase == Phase.GAME_OVER:
+        return state, []
+    state.phase = Phase.GAME_OVER
+    state.winner = None
+    evs = [_ev("game_over_draw", player=payload.get("username"))]
+    _log(state, evs)
+    return state, evs
+
+
 def _intent_dismiss_raven_notice(state, payload, *, board, rng):
     """Clear the active raven notice; any player may invoke this.
 
@@ -1747,5 +1763,6 @@ _INTENTS: dict[str, Any] = {
     "reveal_raven_notice": _intent_reveal_raven_notice,
     "resolve_raven_effect": _intent_resolve_raven_effect,
     "dismiss_raven_notice": _intent_dismiss_raven_notice,
+    "end_game_draw": _intent_end_game_draw,
     "end_turn": _intent_end_turn,
 }

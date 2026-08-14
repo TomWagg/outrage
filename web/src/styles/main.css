@@ -639,6 +639,37 @@ input, select {
   text-align: right;
 }
 
+/* "New game" sits below the turn actions, muted until you engage with it. */
+.newgame-row {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.newgame-btn {
+  font-size: 0.78rem;
+  padding: 0.3em 0.7em;
+  color: var(--muted);
+  background: none;
+  border-color: var(--border);
+}
+.newgame-btn:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
+.newgame-warn {
+  font-size: 0.8rem;
+  color: var(--fg);
+  margin-bottom: 0.45rem;
+  line-height: 1.35;
+}
+.newgame-confirm { display: flex; gap: 0.4rem; }
+.newgame-confirm button { font-size: 0.78rem; padding: 0.3em 0.7em; }
+.newgame-confirm button:first-child {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.newgame-confirm button:first-child:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
 /* ── End of game ──────────────────────────────────────────────────────────── */
 .gameover-overlay {
   position: fixed;
@@ -665,6 +696,14 @@ input, select {
   animation: gameover-rise 0.55s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 .gameover-banner.is-you { box-shadow: 0 0 90px rgba(212, 175, 55, 0.4); }
+/* A called game gets a cooler, quieter banner than a win. */
+.gameover-banner.is-draw {
+  border-color: var(--border);
+  box-shadow: none;
+  background: linear-gradient(180deg, #26262a 0%, #191a1d 100%);
+}
+.gameover-banner.is-draw .gameover-title { color: var(--fg); text-shadow: none; }
+.gameover-banner.is-draw .gameover-crown { color: var(--muted); filter: none; }
 .gameover-crown { line-height: 0; margin-bottom: 0.5rem; color: var(--accent);
   filter: drop-shadow(0 3px 12px rgba(212, 175, 55, 0.5)); }
 .gameover-title {

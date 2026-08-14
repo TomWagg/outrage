@@ -274,9 +274,24 @@ export function ravenCardCopy(
 /**
  * Resolve a tower card description from a Card payload (uses ``name`` field).
  */
+/** "Brace of Pistols" / "brace_of_pistols" / "Brace Of Pistols" → same key. */
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+// Built once, so a name that has been round-tripped through a card id (which
+// lower-cases and underscores it) still matches. Without this, "Brace of
+// Pistols" comes back as "Brace Of Pistols" and misses the exact-match lookup,
+// leaving the card with no description at all.
+const TOWER_CARDS_BY_SLUG: Record<string, CardCopy> = Object.fromEntries(
+  Object.entries(TOWER_CARDS).map(([name, copy]) => [slugify(name), copy]),
+);
+
 export function towerCardCopy(name: string): CardCopy {
-  return TOWER_CARDS[name] ?? {
-    title: name || "Tower Card",
-    description: "A tower card has been acquired.",
-  };
+  return TOWER_CARDS[name]
+    ?? TOWER_CARDS_BY_SLUG[slugify(name)]
+    ?? {
+      title: name || "Tower Card",
+      description: "A tower card has been acquired.",
+    };
 }
