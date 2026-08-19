@@ -48,17 +48,27 @@ def kinds_of(evs) -> list[str]:
     return [e["kind"] for e in evs]
 
 
-def land_and_reveal(state: GameState, player: PlayerState):
+def land_and_reveal(state: GameState, player: PlayerState, **resolve_params):
     """Land on the square, then have the drawer turn the raven card over.
 
     Raven effects deliberately don't fire on landing any more — the card is
     dealt face-down and resolves only when the drawer reveals it, so nobody
     sees a piece move before they've seen why.
+
+    A card that still wants an answer after the reveal (a Summons, which may be
+    refused) gets ``resolve_params`` sent straight back at it.
     """
     evs = _resolve_landing(state, BOARD, player)
     if state.turn.pending_raven is not None:
         _, more = apply(
             state, "reveal_raven_notice", {"username": player.username},
+            board=BOARD, rng=_GLOBAL_RNG.get(),
+        )
+        evs = evs + more
+    if state.turn.pending_raven is not None and resolve_params:
+        _, more = apply(
+            state, "resolve_raven_effect",
+            {"username": player.username, "params": dict(resolve_params)},
             board=BOARD, rng=_GLOBAL_RNG.get(),
         )
         evs = evs + more
@@ -71,7 +81,7 @@ def test_summons_to_the_museum_draws_a_tower_card():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("go_to_location", location="museum")]
 
-    evs = land_and_reveal(state, player)
+    evs = land_and_reveal(state, player, accept=True)
 
     assert player.position == BOARD.data.museum_space
     assert "tower_card_drawn" in kinds_of(evs)
@@ -85,7 +95,7 @@ def test_summons_to_devereux_grants_the_coin():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("go_to_location", location="devereux_tower")]
 
-    evs = land_and_reveal(state, player)
+    evs = land_and_reveal(state, player, accept=True)
 
     assert player.position == BOARD.data.devereux_space
     assert "coin_picked_up" in kinds_of(evs)
@@ -132,7 +142,7 @@ def test_summons_onto_a_raven_square_does_not_draw_a_second_raven_card():
         raven("go_to_location", location=dest),
     ]
 
-    evs = land_and_reveal(state, player)
+    evs = land_and_reveal(state, player, accept=True)
 
     assert player.position == dest
     assert kinds_of(evs).count("raven_card_drawn") == 1
@@ -146,7 +156,7 @@ def test_summons_to_the_broad_arrow_tower_still_costs_your_weapons():
     state = make_state(player)
     state.raven_draw = [raven("go_to_location", location="broad_arrow_tower")]
 
-    evs = land_and_reveal(state, player)
+    evs = land_and_reveal(state, player, accept=True)
     ev = next(e for e in evs if e["kind"] == "weapons_surrendered")
 
     assert player.position == "ww29_broad_arrow"

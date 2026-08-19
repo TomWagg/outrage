@@ -1450,6 +1450,16 @@
       "label": "Shop",
       "region": "inner_ward",
       "kind": "shop",
+      "coords_region": [
+        [
+          1,
+          -4
+        ],
+        [
+          4,
+          -4
+        ]
+      ],
       "neighbors": [
         "ww04_guidebook"
       ]
@@ -3890,6 +3900,12 @@
       "ww29_broad_arrow"
     ],
     "beauchamp_tower_confinement_only_from_raven_card": true,
+  "_note_confine_on_landing": "Walking onto the Bloody or Bowyer Tower is the same as being sent there: the door locks behind you. Beauchamp is the exception - see beauchamp_tower_confinement_only_from_raven_card.",
+  "confine_on_landing_kinds": {
+    "bloody_tower": "IMPRISONED",
+    "bowyer_tower": "TORTURED"
+  },
+  "confinement_turns": 3,
     "devereux_grants_coin": true,
     "extra_turn_resets_consecutive_doubles": true,
     "go_back_uses_landing_roll": true,

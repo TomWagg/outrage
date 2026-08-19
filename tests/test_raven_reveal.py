@@ -52,6 +52,9 @@ def test_drawing_parks_the_card_without_firing_it():
 
 def test_revealing_fires_the_effect():
     state, player = make_state()
+    # A card with nothing to ask, so the reveal alone settles it.
+    state.raven_draw = [Card(id="raven:pecked:1", kind="raven", name="pecked",
+                             effect_key="pecked_by_ravens")]
     _resolve_landing(state, BOARD, player)
 
     state, evs = apply(state, "reveal_raven_notice", {"username": "p1"},
@@ -60,7 +63,40 @@ def test_revealing_fires_the_effect():
 
     assert "raven_notice_revealed" in kinds
     assert state.active_raven_notice.revealed is True
-    assert state.players[0].position == BOARD.data.museum_space
+    assert state.players[0].position == BOARD.data.hospital_space
+    assert state.turn.pending_raven is None
+
+
+def test_a_summons_is_obeyed_only_when_accepted():
+    state, player = make_state()
+    _resolve_landing(state, BOARD, player)
+    state, evs = apply(state, "reveal_raven_notice", {"username": "p1"},
+                       board=BOARD, rng=Rng(seed=5))
+
+    # Revealing a Summons asks the question rather than moving the piece.
+    assert "raven_needs_input" in [e["kind"] for e in evs]
+    assert player.position == RAVEN_SPACE
+
+    state, _ = apply(state, "resolve_raven_effect",
+                     {"username": "p1", "params": {"accept": True}},
+                     board=BOARD, rng=Rng(seed=5))
+    assert player.position == BOARD.data.museum_space
+    assert state.turn.pending_raven is None
+
+
+def test_a_summons_can_be_refused_at_the_cost_of_a_turn():
+    state, player = make_state()
+    _resolve_landing(state, BOARD, player)
+    apply(state, "reveal_raven_notice", {"username": "p1"},
+          board=BOARD, rng=Rng(seed=5))
+
+    state, evs = apply(state, "resolve_raven_effect",
+                       {"username": "p1", "params": {"decline": True}},
+                       board=BOARD, rng=Rng(seed=5))
+
+    assert "summons_declined" in [e["kind"] for e in evs]
+    assert player.position == RAVEN_SPACE
+    assert player.miss_next_turn is True
     assert state.turn.pending_raven is None
 
 

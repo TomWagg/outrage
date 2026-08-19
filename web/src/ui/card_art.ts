@@ -58,6 +58,52 @@ const RAVEN_BACK = `
         stroke-width="1.1" stroke-linecap="round"/>
 `;
 
+/** Barred window: the Bloody / Beauchamp Tower cell. */
+const PRISON_ICON = `
+  <path d="M5 21 V9 a7 7 0 0 1 14 0 V21 Z"/>
+  <path d="M9.7 21 V4.6"/>
+  <path d="M14.3 21 V4.6"/>
+  <path d="M5 12.5 H19"/>
+  <path d="M5 17 H19"/>
+  <path d="M3 21 H21"/>
+`;
+
+/** Quill over an unrolled confession: the Bowyer Tower questioning. */
+const QUESTIONING_ICON = `
+  <path d="M4 5.5 h11 a2 2 0 0 1 2 2 V19 a2 2 0 0 1 -2 2 H4 Z"/>
+  <path d="M6.6 9.5 h6.4"/>
+  <path d="M6.6 12.7 h6.4"/>
+  <path d="M6.6 15.9 h3.8"/>
+  <path d="M21.4 2.6 q-2.6 4.6 -7.4 8.4 l-1.5 -1.5 q4.4 -4.3 8.9 -6.9 Z"/>
+  <path d="M12.5 9.5 L11 13 l3.4 -1.6"/>
+`;
+
+/** The Rack: a frame with a crank drum at each end and the rope drawn taut. */
+const RACK_ICON = `
+  <path d="M3 6.5 H21 a1 1 0 0 1 1 1 V16.5 a1 1 0 0 1 -1 1 H3 a1 1 0 0 1 -1 -1 V7.5 a1 1 0 0 1 1 -1 Z"/>
+  <circle cx="5.6" cy="12" r="2.4"/>
+  <circle cx="18.4" cy="12" r="2.4"/>
+  <path d="M8 12 H16"/>
+  <path d="M5.6 8.4 V6.5"/>
+  <path d="M5.6 15.6 V17.5"/>
+  <path d="M18.4 8.4 V6.5"/>
+  <path d="M18.4 15.6 V17.5"/>
+`;
+
+/**
+ * Line art for the confinement banner, keyed by :class:`Status`.
+ *
+ * Falls back to the cell window: any confinement not named here is still, at
+ * bottom, a locked door.
+ */
+export function confinementIcon(status: string, size = 88): string {
+  const inner =
+    status === "TORTURED" ? QUESTIONING_ICON
+      : status === "RACKED" ? RACK_ICON
+        : PRISON_ICON;
+  return strokeIcon(inner, size);
+}
+
 export function towerCardBack(size = 64): string {
   return fillIcon(TOWER_BACK, size, "card-icon-back");
 }

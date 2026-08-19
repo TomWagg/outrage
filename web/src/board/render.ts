@@ -49,10 +49,10 @@ const SPACE_KIND_DESC: Record<string, string> = {
   rack:             "The Rack — sent here by effect. Lose your coin (or whole hand); miss 3 turns.",
   rack_sender:      "Rack sender — can dispatch players to The Rack.",
   bench:            "Bench — sit here and miss a turn.",
-  chapel_royal:     "Chapel Royal — landing here ends your turn.",
+  chapel_royal:     "Chapel Royal — landing here ends your turn. A secret passage runs from here to the Salt Tower (one step).",
   chapel_st_john:   "Chapel of St John — landing here ends your turn.",
   bloody_tower:     "Bloody Tower — imprisoned 3 turns. Roll a double to escape early.",
-  beauchamp_tower:  "Beauchamp Tower — imprisoned 3 turns. Escape with a double, Rope, or Ladder.",
+  beauchamp_tower:  "Beauchamp Tower — safe to walk through; only its raven card locks you up (3 turns; escape with a double, Rope, or Ladder).",
   bowyer_tower:     "Bowyer Tower — tortured 3 turns. Escape with a double or play Confession.",
   queens_house:     "Queen's House — roll odd each turn to become accredited and enter the Inner Ward freely.",
   barracks:         "Barracks — Yeoman Warder home base.",
@@ -181,6 +181,9 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     Object.keys(dests).length > 0;
   // When choosing for the split-7 target, use a distinct highlight colour.
   const choosingForTarget = imChoosing && pm?.is_for_target === true;
+  // Destinations that cost a Disguise are outlined dashed rather than solid —
+  // reachable, but not for free.
+  const disguiseDests = new Set(pm?.requires_disguise ?? []);
 
   // Build the SVG.
   // width/height are intentionally omitted so the SVG is intrinsically sized
@@ -415,6 +418,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
       // Orange for your own movement, purple for "send the target here".
       el.setAttribute("stroke", choosingForTarget ? "#9b59b6" : "#e67e22");
       el.setAttribute("stroke-width", "3");
+      if (disguiseDests.has(sp.id)) el.setAttribute("stroke-dasharray", "4 2");
       el.addEventListener("click", () => onChooseDestination?.(sp.id));
     } else if (opts.onSpaceClick) {
       el.addEventListener("click", () => opts.onSpaceClick!(sp.id));
@@ -596,6 +600,78 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     svg.appendChild(edgeLayer);
   }
 
+  // --- built-in traversal edges (the Chapel Royal ↔ Salt Tower passage) ---
+  // Its two ends sit on opposite corners of the board, so a line between them
+  // would cut across everything (which is why the edge layer above skips it).
+  // Mark each mouth instead, and say in the tooltip where it comes out.
+  {
+    const passLayer = createSVG("g", { "data-layer": "traversal" });
+    for (const te of board.traversal_edges ?? []) {
+      if (!te.built_in || te.requires_card) continue;
+      const mouths: [string, string][] = te.direction === "forward"
+        ? [[te.from_space, te.to_space]]
+        : te.direction === "backward"
+          ? [[te.to_space, te.from_space]]
+          : [[te.from_space, te.to_space], [te.to_space, te.from_space]];
+      for (const [here, there] of mouths) {
+        const r = rectMap.get(here);
+        if (!r) continue;
+        const cx = r.x + r.w - CELL * 0.3;
+        const cy = r.y + CELL * 0.3;
+        const g = createSVG("g");
+        g.appendChild(createSVG("circle", {
+          cx: String(cx), cy: String(cy), r: String(CELL * 0.22),
+          fill: "#1d1d2e", stroke: "#c9a227",
+          "stroke-width": "1.4", "stroke-dasharray": "3 2",
+        }));
+        const glyph = createSVG("text", {
+          x: String(cx), y: String(cy),
+          "text-anchor": "middle", "dominant-baseline": "central",
+          "font-size": String(CELL * 0.3), fill: "#c9a227",
+        });
+        glyph.textContent = "⇄";
+        g.appendChild(glyph);
+        const title = createSVG("title");
+        title.textContent =
+          `${te.description ? capitalise(te.description) : "Secret passage"} — ` +
+          `one step to ${spaceLabel(board, there)}`;
+        g.appendChild(title);
+        passLayer.appendChild(g);
+      }
+    }
+    svg.appendChild(passLayer);
+  }
+
+  // --- card-gated traversal edges (the rope and the ladder) ---
+  // Drawn as the thing itself rather than an abstract line: a player holding
+  // the card needs to spot the shortcut on the board, and a player who isn't
+  // needs to understand why two squares that don't touch are joined. Neither
+  // edge is consumed when used, so they're permanent fixtures — unlike the
+  // secret passage above, both ends sit close enough together to just draw.
+  {
+    const itemLayer = createSVG("g", { "data-layer": "traversal-items" });
+    for (const te of board.traversal_edges ?? []) {
+      if (!te.requires_card) continue;
+      const a = rectMap.get(te.from_space);
+      const b = rectMap.get(te.to_space);
+      if (!a || !b) continue;
+      const from = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+      const to   = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      const g = te.item === "ladder"
+        ? ladderGraphic(from, to)
+        : ropeGraphic(from, to);
+      const title = createSVG("title");
+      const item = te.item ?? "shortcut";
+      title.textContent =
+        `${capitalise(item)} — ${spaceLabel(board, te.from_space)} ⇄ ` +
+        `${spaceLabel(board, te.to_space)}. ` +
+        `Costs one step and needs the ${item} card in hand; the card is not used up.`;
+      g.appendChild(title);
+      itemLayer.appendChild(g);
+    }
+    svg.appendChild(itemLayer);
+  }
+
   // --- jewels (at offset from their home space) ---
   if (game) {
     const jewelLayer = createSVG("g", { "data-layer": "jewels" });
@@ -637,6 +713,45 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
       ring.appendChild(title);
     }
     svg.appendChild(jewelLayer);
+  }
+
+  // --- the Devereux coin pile ---
+  // One coin per player plus one, stacked down the left edge of the tower so
+  // the table can see at a glance how many are left to be claimed. Coins that
+  // come back (the Rack toll, a fight won by someone already carrying one)
+  // reappear here, so this is drawn from ``coins_available`` every render.
+  if (game) {
+    const devereux = board.spaces.find((s) => s.id === board.devereux_space);
+    const rect = devereux ? spaceRect(devereux, toPx) : null;
+    const total = game.coins_total ?? game.coins_available;
+    if (rect && total > 0) {
+      const coinLayer = createSVG("g", { "data-layer": "coins" });
+      // Fit the whole pile inside the tower's height however many there are.
+      const r = Math.min(CELL * 0.2, (rect.h - 6) / (total * 2.2));
+      const gap = r * 2.2;
+      const cx = rect.x + r + 4;
+      const top = rect.y + rect.h / 2 - ((total - 1) * gap) / 2;
+      for (let i = 0; i < total; i++) {
+        const taken = i >= game.coins_available;
+        const cy = top + i * gap;
+        const c = createSVG("circle", {
+          cx: String(cx),
+          cy: String(cy),
+          r: String(r),
+          fill: taken ? "none" : "#e8c34a",
+          stroke: taken ? "rgba(255,255,255,0.35)" : "#a8842a",
+          "stroke-width": taken ? "1" : "1.4",
+          ...(taken ? { "stroke-dasharray": "2 2" } : {}),
+        });
+        const title = createSVG("title");
+        title.textContent = taken
+          ? "Coin claimed by a player"
+          : `Coin — ${game.coins_available} of ${total} left in the Devereux Tower`;
+        c.appendChild(title);
+        coinLayer.appendChild(c);
+      }
+      svg.appendChild(coinLayer);
+    }
   }
 
   // --- warders ---
@@ -922,8 +1037,120 @@ interface Pt { x: number; y: number; }
 interface PxRect { x: number; y: number; w: number; h: number; }
 
 /** A space's human label, or "" when it has none (ids are not user-facing). */
+interface Pt { x: number; y: number }
+
+/**
+ * A coil of rope between two square centres.
+ *
+ * Drawn as a sine-ish zigzag along the segment with a knot at each end, so it
+ * reads as slack rope rather than a routing line — the board already uses
+ * straight lines and arrows for movement, and this is not movement.
+ */
+function ropeGraphic(from: Pt, to: Pt): SVGElement {
+  const g = createSVG("g", { "pointer-events": "visiblePainted" });
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // Unit vectors along the run and across it.
+  const ux = dx / len, uy = dy / len;
+  const px = -uy, py = ux;
+  const amp = Math.min(CELL * 0.22, len * 0.12);
+  const waves = Math.max(3, Math.round(len / (CELL * 0.55)));
+  const pts: string[] = [`M ${from.x} ${from.y}`];
+  for (let i = 1; i <= waves; i++) {
+    const t = i / waves;
+    const side = i % 2 === 0 ? -1 : 1;
+    // Control point pushed off the axis; the anchor stays on it, so the curve
+    // crosses the line at every step and the slack alternates.
+    const cT = t - 1 / (waves * 2);
+    const cx = from.x + ux * len * cT + px * amp * side;
+    const cy = from.y + uy * len * cT + py * amp * side;
+    pts.push(`Q ${cx} ${cy} ${from.x + ux * len * t} ${from.y + uy * len * t}`);
+  }
+  g.appendChild(createSVG("path", {
+    d: pts.join(" "),
+    fill: "none",
+    stroke: "#3a2a17",
+    "stroke-width": "4.5",
+    "stroke-linecap": "round",
+  }));
+  g.appendChild(createSVG("path", {
+    d: pts.join(" "),
+    fill: "none",
+    stroke: "#b98b4e",
+    "stroke-width": "2.6",
+    "stroke-linecap": "round",
+    "stroke-dasharray": "3 2.2",
+  }));
+  for (const end of [from, to]) {
+    g.appendChild(createSVG("circle", {
+      cx: String(end.x), cy: String(end.y), r: String(CELL * 0.11),
+      fill: "#b98b4e", stroke: "#3a2a17", "stroke-width": "1.2",
+    }));
+  }
+  return g;
+}
+
+/**
+ * A ladder between two square centres: two rails and evenly spaced rungs.
+ */
+function ladderGraphic(from: Pt, to: Pt): SVGElement {
+  const g = createSVG("g", { "pointer-events": "visiblePainted" });
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const px = -uy, py = ux;
+  const half = Math.min(CELL * 0.17, len * 0.16);
+
+  const rail = (side: number) => createSVG("line", {
+    x1: String(from.x + px * half * side),
+    y1: String(from.y + py * half * side),
+    x2: String(to.x + px * half * side),
+    y2: String(to.y + py * half * side),
+    stroke: "#8a6234", "stroke-width": "3", "stroke-linecap": "round",
+  });
+  g.appendChild(rail(1));
+  g.appendChild(rail(-1));
+
+  const rungs = Math.max(2, Math.round(len / (CELL * 0.4)));
+  for (let i = 0; i <= rungs; i++) {
+    const t = i / rungs;
+    const cx = from.x + ux * len * t;
+    const cy = from.y + uy * len * t;
+    g.appendChild(createSVG("line", {
+      x1: String(cx + px * half), y1: String(cy + py * half),
+      x2: String(cx - px * half), y2: String(cy - py * half),
+      stroke: "#c08c4c", "stroke-width": "2", "stroke-linecap": "round",
+    }));
+  }
+  return g;
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const REGION_NAMES: Record<string, string> = {
+  wall_walk: "the Wall Walk",
+  inner_ward: "the Inner Ward",
+  white_tower: "the White Tower",
+};
+
+/**
+ * A space as a player would name it, for tooltips and edge labels.
+ *
+ * Plain squares carry an empty ``label``, so falling back to it left tooltips
+ * reading "Rope — Rack Sender ⇄ ." Locate them instead: a numbered step on the
+ * Wall Walk, or a region and grid reference in the wards.
+ */
 function spaceLabel(board: BoardData, id: string): string {
-  return board.spaces.find((s) => s.id === id)?.label ?? "";
+  const sp = board.spaces.find((s) => s.id === id);
+  if (!sp) return "";
+  if (sp.label) return sp.label;
+  if (sp.wall_walk_order != null) return `the Wall Walk (step ${sp.wall_walk_order})`;
+  const region = REGION_NAMES[sp.region] ?? "the board";
+  return sp.coords ? `${region} at ${sp.coords[0]},${sp.coords[1]}` : region;
 }
 
 /** Filled triangle at ``tip``, pointing in the ``from`` → ``tip`` direction. */

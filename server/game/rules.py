@@ -31,11 +31,14 @@ from . import combat as combat_mod
 from .movement import compute_destinations, split_movement
 from .rng import Rng
 from .state import (
+    CONFINED_STATUSES,
     Combat,
+    ConfinementNotice,
     GameState,
     GameStats,
     LogEntry,
     JewelId,
+    DeferredSplitLeg,
     PendingCardChange,
     PendingJewelAttempt,
     PendingMove,
@@ -50,8 +53,8 @@ from .state import (
 
 log = logging.getLogger(__name__)
 
-# Max coins the devereux Tower "holds" — equals the player cap for this
-# implementation (5 per scoping notes).
+# Fallback coin cap for states built without ``start_game`` (unit tests, mostly).
+# A live game overwrites ``coins_total`` with ``len(players) + 1``.
 MAX_COINS = 5
 # Initial hand sizes by player count.
 DEAL_2_4 = 6
@@ -75,6 +78,7 @@ def _log(state: GameState, evs: Iterable[dict[str, Any]]) -> None:
 _LOCKUP_EVENTS = {
     "three_doubles_bloody_tower", "beauchamp_imprisonment", "bowyer_questioning",
     "rack_sender_triggered", "firecrackers_racked", "stopped_forfeit",
+    "confined_on_landing",
 }
 
 
@@ -132,6 +136,14 @@ def compute_game_stats(state: GameState) -> dict[str, GameStats]:
     return stats
 
 
+def _disguise_card(player: PlayerState) -> Optional[Card]:
+    """The first unplayed Disguise in ``player``'s hand, if they hold one."""
+    return next(
+        (c for c in player.hand if c.kind == "tower" and c.effect_key == "disguise"),
+        None,
+    )
+
+
 def _warder_blocked_spaces(state: GameState, board: "Board") -> set[str]:
     """Return post space ids that are occupied by a warder this turn.
 
@@ -142,6 +154,18 @@ def _warder_blocked_spaces(state: GameState, board: "Board") -> set[str]:
         return set()
     barracks = board.data.barracks_space
     return {w.location for w in state.warders if w.location != barracks}
+
+
+# Phases that own the table: something is waiting on a decision (or the game is
+# finished), so nothing else may reset the phase to TURN_END underneath them.
+_SUB_PHASES = (
+    Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT, Phase.CARD_CHANGE,
+    Phase.CHOOSING_PATH, Phase.COMBAT, Phase.SPLIT_SEVEN_ASSIGN, Phase.GAME_OVER,
+)
+
+
+def _sub_phase_active(state: GameState) -> bool:
+    return state.phase in _SUB_PHASES
 
 
 def _require_phase(state: GameState, *phases: Phase) -> None:
@@ -161,6 +185,67 @@ def _require_current_player(state: GameState, username: str) -> PlayerState:
 # =========================================================================
 
 
+#: Event kinds that explain *why* somebody ended up locked up, mapped to the
+#: banner copy. Only used to flavour the notice — the notice itself is raised by
+#: watching statuses change, so a route with no entry here still announces
+#: itself.
+_CONFINEMENT_CAUSES = {
+    "confined_on_landing": "landed",
+    "three_doubles_bloody_tower": "three_doubles",
+    "rack_sender_triggered": "rack_sender",
+    "firecrackers_racked": "firecrackers",
+    "beauchamp_imprisonment": "raven",
+    "rack_of_torment": "raven",
+    "stopped_forfeit": "searched",
+    "combat_resolved": "combat",
+    "framed": "framed",
+}
+
+
+def _raise_confinement_notice(
+    state: GameState,
+    before: dict[str, Status],
+    events: list[dict[str, Any]],
+) -> None:
+    """Announce any player who has just crossed into confinement.
+
+    Driven by comparing statuses either side of the handler rather than by
+    hooking each site that locks somebody up — there are seven of those (a
+    landing, three doubles, the rack-sender square, two raven cards, a lost
+    fight, Firecrackers) and a new one would silently skip the banner.
+    """
+    newly = [
+        p for p in state.players
+        if p.confined and not (before.get(p.username) in CONFINED_STATUSES)
+    ]
+    if newly:
+        # More than one at once isn't reachable today; announce the first and
+        # let the log carry the rest rather than dropping the banner entirely.
+        victim = newly[0]
+        cause = ""
+        for ev in events:
+            mapped = _CONFINEMENT_CAUSES.get(ev.get("kind", ""))
+            if mapped and ev.get("payload", {}).get("player") in (victim.username, None):
+                cause = mapped
+                break
+        state.active_confinement_notice = ConfinementNotice(
+            username=victim.username,
+            status=victim.status,
+            space_id=victim.position,
+            turns=victim.status_turns_remaining,
+            cause=cause,
+        )
+        return
+    # Released (pardon, sentence served, confessed away): the banner is stale.
+    notice = state.active_confinement_notice
+    if notice is not None:
+        try:
+            if not state.player(notice.username).confined:
+                state.active_confinement_notice = None
+        except KeyError:
+            state.active_confinement_notice = None
+
+
 def apply(
     state: GameState,
     intent_name: str,
@@ -172,7 +257,9 @@ def apply(
     handler = _INTENTS.get(intent_name)
     if handler is None:
         raise RuleError(f"Unknown intent: {intent_name}")
+    statuses_before = {p.username: p.status for p in state.players}
     new_state, events = handler(state, payload, board=board, rng=rng)
+    _raise_confinement_notice(new_state, statuses_before, events)
     # Tally here rather than at each game-over site: handlers log their events
     # on the way out, so this is the first point where the log is complete for
     # the turn that ended the game.
@@ -202,6 +289,10 @@ def _intent_start_game(state, payload, *, board, rng):
                 break
             p.add_card(state.tower_draw.pop())
         p.position = board.data.start_space
+    # One coin more than there are players: somebody always has to fight for
+    # the last one.
+    state.coins_total = len(state.players) + 1
+    state.coins_available = state.coins_total
     # Initialise warders and jewels if not already.
     if not state.warders:
         for w in board.data.initial_warders:
@@ -214,7 +305,10 @@ def _intent_start_game(state, payload, *, board, rng):
         rng.shuffle(order)
         state.turn_order = order
     state.phase = Phase.TURN_START
-    evs = [_ev("game_started", order=state.turn_order, hand_size=per_player)]
+    evs = [_ev(
+        "game_started", order=state.turn_order, hand_size=per_player,
+        mode=state.mode, coins=state.coins_total,
+    )]
     _log(state, evs)
     return state, evs
 
@@ -224,15 +318,73 @@ def _intent_start_game(state, payload, *, board, rng):
 # =========================================================================
 
 
+#: Effects that are still legal once the dice are down and the move is over.
+#:
+#: Some cards are only worth playing when you know how the turn went. A Tower
+#: Pass buys the extra turn you now know you need; Sanctuary is a retreat you
+#: take after seeing where you landed. The Pardons and Confession go further —
+#: they answer a confinement that a *landing* imposed, so before this they were
+#: unreachable at the only moment they mattered.
+#:
+#: Everything absent from this set stays pre-roll-only, because it acts on a
+#: roll that has already happened: Disguise (handled during path choice
+#: instead), Firecrackers, Binary Disruption, Lasso.
+POST_MOVE_PLAYABLE_EFFECTS = frozenset({
+    "tower_pass",
+    "sanctuary",
+    "confession",
+    "royal_pardon",
+    "rack_pardon",
+    "traversal_beauchamp_escape",
+})
+
+
+#: Cards a locked-up player may play at any time, on their turn or off it.
+#:
+#: These only ever act on their owner, and the Rack in particular gives them no
+#: turn to act on: a racked player is skipped outright (see ``_intent_end_turn``),
+#: so requiring it to be their turn would make a Rack Pardon a card that can
+#: never be played.
+SELF_RESCUE_EFFECTS = frozenset({
+    "rack_pardon",
+    "royal_pardon",
+    "traversal_beauchamp_escape",
+})
+
+#: Phases in which no card may be played at all: the game isn't running, or a
+#: fight owns the table and has its own card-play path.
+_NO_CARD_PLAY_PHASES = (Phase.LOBBY, Phase.COMBAT, Phase.GAME_OVER)
+
+
 def _intent_play_card_pre_roll(state, payload, *, board, rng):
-    """Play a utility/custom card from hand before rolling."""
-    _require_phase(state, Phase.TURN_START, Phase.PRE_ROLL, Phase.ACCREDITATION_ATTEMPT)
+    """Play a utility/custom card from hand.
+
+    Named for the pre-roll case it was written for, but it now covers three
+    windows:
+
+    * the pre-roll phases, as before;
+    * ``TURN_END`` for the cards in :data:`POST_MOVE_PLAYABLE_EFFECTS`, which
+      are only worth playing once you can see how the turn went;
+    * any time at all, for a confined player reaching for one of
+      :data:`SELF_RESCUE_EFFECTS`.
+    """
     username = payload["username"]
-    player = _require_current_player(state, username)
     card_id = payload["card_id"]
+    try:
+        player = state.player(username)
+    except KeyError as exc:
+        raise RuleError(f"Unknown player: {username}") from exc
     card = next((c for c in player.hand if c.id == card_id), None)
     if card is None:
         raise RuleError(f"No such card in hand: {card_id}")
+    if state.phase in _NO_CARD_PLAY_PHASES:
+        raise RuleError(f"Cannot play cards during {state.phase.value}")
+    if not (player.confined and card.effect_key in SELF_RESCUE_EFFECTS):
+        _require_phase(
+            state, Phase.TURN_START, Phase.PRE_ROLL, Phase.ACCREDITATION_ATTEMPT,
+            Phase.TURN_END,
+        )
+        _require_current_player(state, username)
     # Only certain categories are playable pre-roll.
     if card.kind != "tower":
         raise RuleError("Only tower cards are played pre-roll")
@@ -240,6 +392,8 @@ def _intent_play_card_pre_roll(state, payload, *, board, rng):
         raise RuleError(f"Cannot play {card.name} pre-roll")
     if card.effect_key is None:
         raise RuleError(f"Card {card.name} has no effect")
+    if state.phase == Phase.TURN_END and card.effect_key not in POST_MOVE_PLAYABLE_EFFECTS:
+        raise RuleError(f"{card.name} must be played before you roll")
     # Remove card first so dispatch can't see it in hand.
     player.remove_card(card_id)
     state.tower_discard.append(card)
@@ -251,9 +405,78 @@ def _intent_play_card_pre_roll(state, payload, *, board, rng):
         state.tower_discard.remove(card)
         player.add_card(card)
         raise RuleError(str(exc)) from exc
-    state.turn.cards_played_this_turn.append(card_id)
-    if state.phase == Phase.TURN_START:
-        state.phase = Phase.PRE_ROLL
+    # Both of these belong to the acting player's own turn. An off-turn
+    # self-rescue must not write into somebody else's turn context, nor nudge
+    # their phase out from under them.
+    if state.turn_order and username == state.turn_order[state.current_turn_index]:
+        state.turn.cards_played_this_turn.append(card_id)
+        if state.phase == Phase.TURN_START:
+            state.phase = Phase.PRE_ROLL
+    _log(state, evs)
+    return state, evs
+
+
+# =========================================================================
+# Card redraw (spend the turn trading cards instead of moving)
+# =========================================================================
+
+
+def _intent_redraw_cards(state, payload, *, board, rng):
+    """Trade ``n`` cards from hand for ``n - 1`` off the tower deck.
+
+    Offered instead of rolling: the player stays exactly where they are and
+    spends the whole turn on the exchange. The card you lose on the deal is the
+    price — which is why a single card buys nothing and the intent refuses it
+    rather than quietly burning the card for an empty hand.
+
+    Whether the new cards are any better is the gamble; the old ones go to the
+    discard pile, so a hand emptied this way can come back around.
+    """
+    _require_phase(state, Phase.TURN_START, Phase.PRE_ROLL)
+    username = payload["username"]
+    player = _require_current_player(state, username)
+    if player.confined:
+        raise RuleError("You cannot trade cards while locked up")
+    if player.miss_next_turn:
+        raise RuleError("You are missing this turn")
+
+    card_ids = list(payload.get("card_ids") or [])
+    if len(set(card_ids)) != len(card_ids):
+        raise RuleError("Duplicate card in redraw selection")
+    if len(card_ids) < 2:
+        raise RuleError("Redraw needs at least 2 cards — one is the fee")
+    held = {c.id: c for c in player.hand}
+    missing = [cid for cid in card_ids if cid not in held]
+    if missing:
+        raise RuleError(f"Not in your hand: {', '.join(missing)}")
+
+    # Discard first, so the cards handed in can come back out of a reshuffle
+    # rather than being unavailable for the rest of the game.
+    given = [player.remove_card(cid) for cid in card_ids]
+    state.tower_discard.extend(c for c in given if c is not None)
+
+    wanted = len(card_ids) - 1
+    received: list[Card] = []
+    for _ in range(wanted):
+        drew = _draw_tower(state)
+        if drew is None:
+            break
+        player.add_card(drew)
+        received.append(drew)
+
+    evs = [_ev(
+        "cards_redrawn",
+        player=player.username,
+        given=[c.id for c in given if c is not None],
+        received=[c.id for c in received],
+        given_count=len(card_ids),
+        received_count=len(received),
+        # Only relevant when the deck (and its discard pile) ran dry mid-deal.
+        short_by=wanted - len(received),
+    )]
+    # The trade is the turn. Land on TURN_END rather than auto-advancing so a
+    # Tower Pass is still on the table.
+    state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs
 
@@ -315,6 +538,19 @@ def _intent_roll_dice(state, payload, *, board, rng):
         evs = [_ev("dice_rolled", player=player.username, roll=roll, total=total)]
         is_double = roll[0] == roll[1]
 
+    def _three_doubles() -> bool:
+        """Bump the doubles counter; True when the third one sends you down."""
+        state.turn.consecutive_doubles += 1
+        if state.turn.consecutive_doubles < 3:
+            return False
+        player.position = board.data.bloody_tower_space
+        player.status = Status.IMPRISONED
+        player.status_turns_remaining = 3
+        state.turn.consecutive_doubles = 0
+        state.phase = Phase.TURN_END
+        evs.append(_ev("three_doubles_bloody_tower", player=player.username))
+        return True
+
     # Accreditation trial.
     if player.trying_accreditation and not player.accredited:
         if total % 2 == 1:
@@ -322,6 +558,17 @@ def _intent_roll_dice(state, payload, *, board, rng):
             player.trying_accreditation = False
             evs.append(_ev("accredited", player=player.username, via="odd_roll"))
             # Use roll to move in the inner ward (free graph movement).
+        elif is_double:
+            # Every double is even, so without this a double would be an
+            # automatic failure. The clerks give you another go instead — the
+            # three-doubles rule still applies.
+            if not _three_doubles():
+                state.phase = Phase.PRE_ROLL
+                evs.append(_ev(
+                    "accreditation_retry", player=player.username, roll=roll,
+                ))
+            _log(state, evs)
+            return state, evs
         else:
             state.phase = Phase.TURN_END
             evs.append(_ev("accreditation_failed", player=player.username))
@@ -330,15 +577,7 @@ def _intent_roll_dice(state, payload, *, board, rng):
 
     # Doubles tracking.
     if is_double:
-        state.turn.consecutive_doubles += 1
-        if state.turn.consecutive_doubles >= 3:
-            # Cancel movement, go to Bloody Tower.
-            player.position = board.data.bloody_tower_space
-            player.status = Status.IMPRISONED
-            player.status_turns_remaining = 3
-            state.turn.consecutive_doubles = 0
-            state.phase = Phase.TURN_END
-            evs.append(_ev("three_doubles_bloody_tower", player=player.username))
+        if _three_doubles():
             _log(state, evs)
             return state, evs
         # Regular double: grant an extra roll at the end of this turn.
@@ -346,20 +585,67 @@ def _intent_roll_dice(state, payload, *, board, rng):
 
     # Binary disruption or split-7?
     if state.turn.binary_disruption_armed or total == 7:
-        state.phase = Phase.SPLIT_SEVEN_ASSIGN
-        state.turn.pending_split = PendingSplitSeven(
-            total=total,
-            source="binary_disruption" if state.turn.binary_disruption_armed else "seven",
-        )
+        movable = _split_movable_targets(state, board, player, total)
+        if movable:
+            state.phase = Phase.SPLIT_SEVEN_ASSIGN
+            state.turn.pending_split = PendingSplitSeven(
+                total=total,
+                source="binary_disruption" if state.turn.binary_disruption_armed else "seven",
+                movable_targets=movable,
+            )
+            state.turn.binary_disruption_armed = False
+            evs.append(_ev(
+                "split_assign_required", total=total,
+                movable_targets={k: list(v) for k, v in movable.items()},
+            ))
+            _log(state, evs)
+            return state, evs
+        # Nobody can be given any part of the roll (everyone else is boxed in),
+        # so there is nothing to split — the roller takes the lot.
         state.turn.binary_disruption_armed = False
-        evs.append(_ev("split_assign_required", total=total))
-        _log(state, evs)
-        return state, evs
+        evs.append(_ev("split_unavailable", player=player.username, total=total))
 
     # Normal movement path.
     evs.extend(_enter_movement_phase(state, board, player, total))
     _log(state, evs)
     return state, evs
+
+
+def _split_movable_targets(
+    state: GameState, board: Board, roller: PlayerState, total: int,
+) -> dict[str, list[int]]:
+    """Opponents who could actually be moved by part of a split roll.
+
+    Maps username → the leg sizes (1..total-1) that give them at least one legal
+    destination. An un-accredited piece parked on Queen's House is the case that
+    prompted this: the wall walk is forward-only and dead-ends there, so no leg
+    size moves them anywhere and offering them as a split target would silently
+    burn the roller's steps.
+    """
+    blocked = _warder_blocked_spaces(state, board)
+    movable: dict[str, list[int]] = {}
+    for p in state.players:
+        if p.username == roller.username or p.escaped:
+            continue
+        # A locked-up piece stays locked up. Moving it would leave the player
+        # "imprisoned" on some unrelated square, which is how confinement was
+        # being laundered into a free teleport.
+        if p.confined:
+            continue
+        others = [q.position for q in state.players if q.username != p.username and not q.escaped]
+        legs = [
+            n for n in range(1, total)
+            if compute_destinations(
+                board, p.position, n, p,
+                other_player_positions=others,
+                visited_this_turn=[p.position],
+                warder_blocking_spaces=blocked,
+                allow_combat_stops=False,
+            ).destinations
+        ]
+        if legs:
+            movable[p.username] = legs
+    return movable
 
 
 def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, steps: int) -> list[dict[str, Any]]:
@@ -373,12 +659,17 @@ def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, s
         other_player_positions=others,
         visited_this_turn=state.turn.visited_this_turn,
         warder_blocking_spaces=_warder_blocked_spaces(state, board),
+        disguise_available=_disguise_card(player) is not None,
     )
     if not opts.destinations:
         # No legal move — just end turn.
         state.phase = Phase.TURN_END
         return [_ev("no_legal_move", player=player.username, steps=steps)]
-    state.turn.pending_move = PendingMove(steps=steps, destinations=opts.destinations)
+    state.turn.pending_move = PendingMove(
+        steps=steps,
+        destinations=opts.destinations,
+        requires_disguise=sorted(opts.requires_disguise),
+    )
     if opts.forced_single and (only := opts.only_destination()):
         # Auto-commit.
         return _commit_move(state, board, player, only, opts.destinations[only])
@@ -453,13 +744,33 @@ def _resolve_landing(
         if not player.has_coin and state.coins_available > 0:
             player.has_coin = True
             state.coins_available -= 1
-            evs.append(_ev("coin_picked_up", player=player.username))
+            evs.append(_ev(
+                "coin_picked_up", player=player.username,
+                remaining=state.coins_available, total=state.coins_total,
+            ))
 
     # Rack sender (wt_13_11): straight to the Rack, no roll, no appeal.
     if space.kind == "rack_sender":
         from .cards_effects import send_to_rack as _send_to_rack
         evs.append(_ev("rack_sender_triggered", player=player.username, space=space.id))
         evs.extend(_send_to_rack(state, player, board))
+        state.phase = Phase.TURN_END
+        return evs
+
+    # Bloody / Bowyer Tower: walking in is the same as being marched in — the
+    # door locks behind you. Driven by ``confine_on_landing_kinds`` so the
+    # exception (Beauchamp, which confines only via its raven card) stays
+    # visible in the board data rather than buried here.
+    confine_kinds = dict(getattr(rules_cfg, "confine_on_landing_kinds", {}) or {})
+    confine_status = confine_kinds.get(space.kind)
+    if confine_status:
+        player.status = Status(confine_status)
+        player.status_turns_remaining = int(getattr(rules_cfg, "confinement_turns", 3))
+        evs.append(_ev(
+            "confined_on_landing",
+            player=player.username, space=space.id, label=space.label or None,
+            status=confine_status, turns=player.status_turns_remaining,
+        ))
         state.phase = Phase.TURN_END
         return evs
 
@@ -641,9 +952,17 @@ def _dispatch_space_action(
     evs: list[dict[str, Any]] = []
 
     if key == "extra_turn":
-        state.turn.extra_turns_queued += 1
-        if params.get("resets_consecutive_doubles"):
-            state.turn.consecutive_doubles = 0
+        # The player who lands here gets the extra turn — which is not always
+        # the player whose turn it is. A split-7 leg can push an opponent onto
+        # this square, and crediting ``turn.extra_turns_queued`` would hand the
+        # bonus to the roller. Park it on the opponent instead; ``_intent_end_turn``
+        # pays it out when play reaches them.
+        if player.username == state.current_player().username:
+            state.turn.extra_turns_queued += 1
+            if params.get("resets_consecutive_doubles"):
+                state.turn.consecutive_doubles = 0
+        else:
+            player.extra_turns_pending += 1
         evs.append(_ev("extra_turn_granted", player=player.username, space=space.id))
         return evs, False
 
@@ -859,11 +1178,13 @@ def _resolve_pending_raven(
             state.phase = Phase.JEWEL_ATTEMPT
         else:
             state.phase = Phase.TURN_END
+    evs.extend(_resume_deferred_split_leg(state, board))
     return evs
 
 
 def _raven_needs_input(ek: str, params: dict, state: GameState, board: Board, player: PlayerState) -> bool:
-    if ek == "go_to_location" and params.get("location") == "player_choice":
+    if ek == "go_to_location":
+        # Always: a Summons can be refused (at the cost of your next turn).
         return True
     if ek == "call_warder_to_post" and params.get("post") == "chooser":
         # Only worth asking if there's a warder to call *and* somewhere free
@@ -926,16 +1247,15 @@ def _intent_choose_move_path(state, payload, *, board, rng):
             src=old_pos, dst=dest, path=path, move_kind="split_seven",
         )]
         evs.extend(_resolve_landing(state, board, target))
-        # target_first: run the roller's deferred leg now (if still no active sub-phase).
-        if roller_steps > 0 and state.phase not in (
-            Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT,
-            Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT,
-        ):
-            evs.extend(_run_roller_split_leg(state, board, player, roller_steps, target=None, target_destination=None))
-        if state.phase not in (
-            Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT,
-            Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT,
-        ):
+        # target_first: the roller's own leg comes next, but only if the
+        # target's landing hasn't opened a prompt. If it has, park the steps —
+        # answering the prompt picks them back up.
+        if roller_steps > 0:
+            if _sub_phase_active(state):
+                _defer_split_leg(state, DeferredSplitLeg(kind="roller", steps=roller_steps))
+            else:
+                evs.extend(_run_roller_split_leg(state, board, player, roller_steps, target=None, target_destination=None))
+        if not _sub_phase_active(state):
             state.phase = Phase.TURN_END
         _log(state, evs)
         return state, evs
@@ -951,21 +1271,42 @@ def _intent_choose_move_path(state, payload, *, board, rng):
         path = path[: path.index(stop_at) + 1]
     else:
         path = pm.destinations[dest]
+    # Slipping past a manned post costs a Disguise. Charged off the committed
+    # path rather than the offered ``requires_disguise`` list so that stopping
+    # short of the post — which is free — isn't billed for it.
+    pre_evs: list[dict[str, Any]] = []
+    posts = _warder_blocked_spaces(state, board)
+    if any(sid in posts for sid in path[1:]):
+        card = _disguise_card(player)
+        if card is None:
+            raise RuleError("That route passes a Yeoman Warder and you have no Disguise")
+        player.remove_card(card.id)
+        state.tower_discard.append(card)
+        state.turn.disguise_used = True
+        state.turn.cards_played_this_turn.append(card.id)
+        pre_evs.append(_ev(
+            "disguise_played", player=player.username, via="move", space=dest,
+        ))
     # Snapshot the split-7 continuation *before* _commit_move clears pending_move.
     split_target = pm.split_target
     split_n_other = pm.remaining_steps
     split_tdest_override = payload.get("target_destination") or pm.split_target_destination
-    evs = _commit_move(state, board, player, dest, path)
+    evs = pre_evs + _commit_move(state, board, player, dest, path)
     if split_target is not None and split_n_other > 0:
-        evs.extend(_resolve_split_target_leg(state, board, split_target, split_n_other, split_tdest_override))
-        # Landing effects of either leg may have forced a new phase; only
-        # fall through to TURN_END when nothing else needs the player's
-        # attention.
-        if state.phase not in (
-            Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT,
-            Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT,
-        ):
-            state.phase = Phase.TURN_END
+        # The roller's own landing may have opened a prompt; the target's leg
+        # waits for it rather than overwriting the phase.
+        if _sub_phase_active(state):
+            _defer_split_leg(state, DeferredSplitLeg(
+                kind="target", steps=split_n_other,
+                target=split_target, target_destination=split_tdest_override,
+            ))
+        else:
+            evs.extend(_resolve_split_target_leg(state, board, split_target, split_n_other, split_tdest_override))
+            # Landing effects of either leg may have forced a new phase; only
+            # fall through to TURN_END when nothing else needs the player's
+            # attention.
+            if not _sub_phase_active(state):
+                state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs
 
@@ -993,6 +1334,14 @@ def _intent_assign_split_seven(state, payload, *, board, rng):
         raise RuleError("n_self + n_other must equal total")
     if n_self < 0 or n_other < 0:
         raise RuleError("Non-negative splits required")
+    if n_other > 0:
+        # Only hand steps to someone the roll can actually move — otherwise the
+        # steps vanish and the roller has quietly thrown part of their turn away.
+        legs = split.movable_targets.get(target_name or "")
+        if not legs:
+            raise RuleError(f"{target_name or 'That player'} cannot be moved by this roll")
+        if n_other not in legs:
+            raise RuleError(f"{target_name} has no legal move of {n_other}")
     evs: list[dict[str, Any]] = [_ev(
         "split_assigned", self=n_self, other=n_other,
         target=target_name, leg_order=leg_order,
@@ -1000,8 +1349,12 @@ def _intent_assign_split_seven(state, payload, *, board, rng):
 
     target_first = leg_order == "target_first" and n_other > 0 and target_name
     if target_first:
-        # Resolve the target's leg before the roller moves.
+        # Resolve the target's leg before the roller moves. Drop out of
+        # SPLIT_SEVEN_ASSIGN first so the phase the target's landing leaves
+        # behind is readable — anything but MOVING/TURN_END means it opened a
+        # prompt and the roller's leg has to wait.
         state.turn.pending_split = None
+        state.phase = Phase.MOVING
         evs.extend(_resolve_split_target_leg(state, board, target_name, n_other, target_destination))
         if state.phase == Phase.CHOOSING_PATH:
             # Target has multiple destinations; roller must pick one via
@@ -1011,10 +1364,15 @@ def _intent_assign_split_seven(state, payload, *, board, rng):
                 state.turn.pending_move.roller_steps_after_target = n_self
             _log(state, evs)
             return state, evs
-        # Now the roller's leg. No deferred-target leg afterwards.
+        # Now the roller's leg — unless the target's landing opened a prompt of
+        # its own, in which case running it here would overwrite that phase and
+        # strand whoever owes the answer.
         if n_self > 0:
-            evs.extend(_run_roller_split_leg(state, board, player, n_self, target=None, target_destination=None))
-        if state.phase not in (Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT, Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT):
+            if _sub_phase_active(state):
+                _defer_split_leg(state, DeferredSplitLeg(kind="roller", steps=n_self))
+            else:
+                evs.extend(_run_roller_split_leg(state, board, player, n_self, target=None, target_destination=None))
+        if not _sub_phase_active(state):
             state.phase = Phase.TURN_END
         _log(state, evs)
         return state, evs
@@ -1035,8 +1393,16 @@ def _intent_assign_split_seven(state, payload, *, board, rng):
     # Target leg (only if not already deferred via pending_move).
     if state.turn.pending_move is None or state.turn.pending_move.split_target is None:
         if n_other > 0 and target_name:
-            evs.extend(_resolve_split_target_leg(state, board, target_name, n_other, target_destination))
-    if state.phase not in (Phase.JEWEL_ATTEMPT, Phase.RAVEN_EFFECT, Phase.GAME_OVER, Phase.CHOOSING_PATH, Phase.COMBAT):
+            # The roller's landing may have opened a prompt of its own; park
+            # the target's leg rather than trampling that phase.
+            if _sub_phase_active(state):
+                _defer_split_leg(state, DeferredSplitLeg(
+                    kind="target", steps=n_other,
+                    target=target_name, target_destination=target_destination,
+                ))
+            else:
+                evs.extend(_resolve_split_target_leg(state, board, target_name, n_other, target_destination))
+    if not _sub_phase_active(state):
         state.phase = Phase.TURN_END
     _log(state, evs)
     return state, evs
@@ -1067,6 +1433,11 @@ def _run_roller_split_leg(
         other_player_positions=others,
         visited_this_turn=state.turn.visited_this_turn,
         warder_blocking_spaces=_warder_blocked_spaces(state, board),
+        # A split leg is walked in full: the roller already chose its length,
+        # so stopping short at an opponent would be a second bite at that
+        # choice. Landing exactly on someone still offers the fight.
+        allow_combat_stops=False,
+        disguise_available=_disguise_card(player) is not None,
     )
     if not opts.destinations:
         evs.append(_ev("no_legal_move", player=player.username, steps=n_self))
@@ -1082,6 +1453,7 @@ def _run_roller_split_leg(
         remaining_steps=0 if target is None else (0),
         split_target=target,
         split_target_destination=target_destination,
+        requires_disguise=sorted(opts.requires_disguise),
     )
     # If we're deferring a target leg, encode remaining_steps so the choose_move_path
     # handler knows how far to move the target.
@@ -1091,6 +1463,35 @@ def _run_roller_split_leg(
     state.turn.pending_split = None
     state.phase = Phase.CHOOSING_PATH
     evs.append(_ev("choose_path", player=player.username, destinations=list(opts.destinations.keys())))
+    return evs
+
+
+def _defer_split_leg(state: GameState, leg: DeferredSplitLeg) -> None:
+    state.turn.deferred_split_leg = leg
+
+
+def _resume_deferred_split_leg(state: GameState, board: Board) -> list[dict[str, Any]]:
+    """Run a split-7 leg that was held back while someone answered a prompt.
+
+    A no-op unless the table has just come free (``TURN_END``) with a leg still
+    owed. Called from every intent that closes one of the prompts a landing can
+    open, so neither half of a split can be lost to the other half's landing.
+    """
+    leg = state.turn.deferred_split_leg
+    if leg is None or leg.steps <= 0 or state.phase != Phase.TURN_END:
+        return []
+    state.turn.deferred_split_leg = None
+    if leg.kind == "roller":
+        evs = _run_roller_split_leg(
+            state, board, state.current_player(), leg.steps,
+            target=None, target_destination=None,
+        )
+    else:
+        evs = _resolve_split_target_leg(
+            state, board, leg.target, leg.steps, leg.target_destination,
+        )
+    if not _sub_phase_active(state):
+        state.phase = Phase.TURN_END
     return evs
 
 
@@ -1120,6 +1521,10 @@ def _resolve_split_target_leg(
         other_player_positions=others,
         visited_this_turn=[target.position],
         warder_blocking_spaces=_warder_blocked_spaces(state, board),
+        # Same rule as the roller's leg — the assigned steps are spent in full.
+        # Without this, a target given 4 could be parked on a player standing 1
+        # square away, which is how a 4 was quietly being spent as a 1.
+        allow_combat_stops=False,
     )
     if not opts.destinations:
         return evs
@@ -1272,7 +1677,7 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         state,
         tower_deck,
         hospital_space=board.data.hospital_space,
-        devereux_max_coins=MAX_COINS,
+        devereux_max_coins=state.coins_total or MAX_COINS,
         rng=rng,
     )
     _sync_deck(state, "tower", tower_deck)
@@ -1377,6 +1782,7 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
         ))
     state.turn.pending_jewel = None
     state.phase = Phase.TURN_END
+    evs.extend(_resume_deferred_split_leg(state, board))
     _log(state, evs)
     return state, evs
 
@@ -1438,6 +1844,7 @@ def _intent_change_card(state, payload, *, board, rng):
 
     state.turn.pending_card_change = None
     state.phase = Phase.TURN_END
+    evs.extend(_resume_deferred_split_leg(state, board))
     _log(state, evs)
     return state, evs
 
@@ -1555,6 +1962,7 @@ def _intent_end_turn(state, payload, *, board, rng):
             "pending_raven": None,
             "pending_jewel": None,
             "pending_split": None,
+            "deferred_split_leg": None,
             "consecutive_doubles": doubles,
         })
         state.phase = Phase.TURN_START
@@ -1574,7 +1982,7 @@ def _intent_end_turn(state, payload, *, board, rng):
             outgoing.status_turns_remaining = 3
             if outgoing.has_coin:
                 outgoing.has_coin = False
-                state.coins_available = min(5, state.coins_available + 1)
+                state.coins_available = min(state.coins_total, state.coins_available + 1)
                 penalty = "coin"
                 lost = 0
             else:
@@ -1603,7 +2011,7 @@ def _intent_end_turn(state, payload, *, board, rng):
     else:
         state.phase = Phase.GAME_OVER
         _log(state, fc_events)
-        return state, fc_events + [_ev("game_over")]
+        return state, fc_events + [_ev("game_over", winner=state.winner)]
     # Slow mode: game is over if only one non-escaped player remains, or if
     # every jewel has been claimed (nothing left in the White Tower or loose
     # on the board).
@@ -1624,11 +2032,43 @@ def _intent_end_turn(state, payload, *, board, rng):
             )
             _log(state, fc_events + [end_ev])
             return state, fc_events + [end_ev]
+    # The Rack allows no action at all: no roll, no cards, no decision — rolling
+    # doesn't even shorten the sentence early. So don't stop on a racked player
+    # and make them press "End turn" to confirm they can't do anything; tick the
+    # sentence and pass play straight on. Reaching zero releases them but still
+    # costs them this turn, matching the roll-while-racked branch above.
+    skip_evs: list[dict[str, Any]] = []
+    if any(p.status != Status.RACKED for p in state.players if not p.escaped):
+        for _ in range(len(state.turn_order)):
+            racked = state.current_player()
+            if racked.status != Status.RACKED:
+                break
+            racked.status_turns_remaining = max(0, racked.status_turns_remaining - 1)
+            skip_evs.append(_ev(
+                "rack_turn_skipped", player=racked.username,
+                turns_remaining=racked.status_turns_remaining,
+            ))
+            if racked.status_turns_remaining == 0:
+                racked.status = Status.NORMAL
+                skip_evs.append(_ev("rack_expired", player=racked.username))
+            for offset in range(1, len(state.turn_order) + 1):
+                idx = (state.current_turn_index + offset) % len(state.turn_order)
+                if not state.player(state.turn_order[idx]).escaped:
+                    state.current_turn_index = idx
+                    break
+
     # Reset per-turn context.
     state.turn = state.turn.__class__()
     state.phase = Phase.TURN_START
     cur = state.current_player()
-    evs = fc_events + [_ev("turn_start", player=cur.username)]
+    # Pay out any extra turns this player earned while somebody else was acting
+    # (an extra-turn square they were pushed onto by a split-7, say). Consumed
+    # at the *end* of the turn that is starting now, so they take this turn and
+    # then go again.
+    if cur.extra_turns_pending > 0:
+        state.turn.extra_turns_queued += cur.extra_turns_pending
+        cur.extra_turns_pending = 0
+    evs = fc_events + skip_evs + [_ev("turn_start", player=cur.username)]
     _log(state, evs)
     return state, evs
 
@@ -1722,6 +2162,28 @@ def _intent_dismiss_raven_notice(state, payload, *, board, rng):
     return state, [ev]
 
 
+def _intent_dismiss_confinement_notice(state, payload, *, board, rng):
+    """Clear the red confinement banner. Only the player it happened to may.
+
+    Everyone at the table sees the banner; letting anyone dismiss it would rob
+    the victim of the moment. A no-op (and no event) when there's nothing to
+    clear or somebody else asks, so a stale click from another client can't
+    close it out from under them.
+    """
+    notice = state.active_confinement_notice
+    if notice is None:
+        return state, []
+    if payload.get("username") != notice.username:
+        return state, []
+    state.active_confinement_notice = None
+    ev = _ev(
+        "confinement_notice_dismissed",
+        player=notice.username, status=notice.status.value,
+    )
+    _log(state, [ev])
+    return state, [ev]
+
+
 # =========================================================================
 # Global RNG bridge (used by auto-triggered landing raven-draw paths)
 # =========================================================================
@@ -1751,6 +2213,7 @@ _INTENTS: dict[str, Any] = {
     "start_game": _intent_start_game,
     "play_card_pre_roll": _intent_play_card_pre_roll,
     "roll_dice": _intent_roll_dice,
+    "redraw_cards": _intent_redraw_cards,
     "choose_move_path": _intent_choose_move_path,
     "assign_split_seven": _intent_assign_split_seven,
     "initiate_combat": _intent_initiate_combat,
@@ -1761,6 +2224,7 @@ _INTENTS: dict[str, Any] = {
     "change_card": _intent_change_card,
     "attempt_accreditation": _intent_attempt_accreditation,
     "reveal_raven_notice": _intent_reveal_raven_notice,
+    "dismiss_confinement_notice": _intent_dismiss_confinement_notice,
     "resolve_raven_effect": _intent_resolve_raven_effect,
     "dismiss_raven_notice": _intent_dismiss_raven_notice,
     "end_game_draw": _intent_end_game_draw,

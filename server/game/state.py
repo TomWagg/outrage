@@ -42,6 +42,12 @@ class Status(str, Enum):
     TORTURED = "TORTURED"
 
 
+#: Statuses in which a player's piece is locked in place: they take no turn of
+#: their own and nobody else may move them either. The Hospital is deliberately
+#: not one of these — it costs a turn but the piece is free.
+CONFINED_STATUSES: tuple["Status", ...] = (Status.IMPRISONED, Status.TORTURED, Status.RACKED)
+
+
 CombatPhase = Literal[
     "attacker_selecting",
     "defender_selecting",
@@ -77,8 +83,26 @@ class PlayerState(BaseModel):
     status: Status = Status.NORMAL
     status_turns_remaining: int = 0
     miss_next_turn: bool = False
+    # Extra turns owed to this player but not yet taken. Set when something
+    # grants an extra turn to somebody who is *not* the acting player — a
+    # split-7 leg that shoves an opponent onto the extra-turn square, say.
+    # ``_intent_end_turn`` moves it into ``turn.extra_turns_queued`` when play
+    # reaches them, so they get the bonus on their own turn, not the roller's.
+    extra_turns_pending: int = 0
     connected: bool = True
     escaped: bool = False  # slow mode: player is out but game continues
+
+    # --- derived ----------------------------------------------------------
+
+    @property
+    def confined(self) -> bool:
+        """Locked up: in the Bloody/Beauchamp/Bowyer Tower or on the Rack.
+
+        A confined piece cannot be moved by anything — not a split 7, not a
+        Lasso, not a Sanctuary played by its own owner. Serving the sentence is
+        the only way out (bar a Pardon or a Confession).
+        """
+        return self.status in CONFINED_STATUSES
 
     # --- convenience mutators ---------------------------------------------
 
@@ -167,6 +191,11 @@ class PendingSplitSeven(BaseModel):
 
     total: int = 7  # usually 7, but Binary Disruption can reuse this struct
     source: Literal["seven", "binary_disruption"] = "seven"
+    # username -> the leg sizes that would actually move them somewhere. A
+    # player who is boxed in (an un-accredited piece parked on Queen's House,
+    # say) can't be given any of the roll, so the client must not offer them —
+    # and if nobody is movable the split never happens at all.
+    movable_targets: dict[str, list[int]] = Field(default_factory=dict)
 
 
 class RavenNotice(BaseModel):
@@ -189,6 +218,29 @@ class RavenNotice(BaseModel):
     revealed: bool = False
 
 
+class ConfinementNotice(BaseModel):
+    """Public banner announcing that somebody has just been locked up.
+
+    The table's counterpart to :class:`RavenNotice`: everyone sees it, so the
+    imprisonment reads as an event at the table rather than a quiet status
+    change in a side panel. Only the player it happened to may dismiss it.
+
+    Lives on :class:`GameState` so it survives the per-turn ``TurnContext``
+    reset and reaches reconnecting clients. Purely informational — it gates no
+    phase, so a disconnected victim can't wedge the game by never dismissing.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str
+    status: Status
+    space_id: str
+    turns: int = 0
+    #: Best-effort description of what put them there, for the banner copy.
+    #: Derived from the event log, so an unrecognised route yields "".
+    cause: str = ""
+
+
 class PendingMove(BaseModel):
     """Pre-commit move decision after a roll."""
 
@@ -196,6 +248,11 @@ class PendingMove(BaseModel):
 
     steps: int
     destinations: dict[str, list[str]] = Field(default_factory=dict)
+    # Destinations whose only route runs through an occupied Yeoman Warder post.
+    # Reaching one spends a Disguise from hand, so the client labels them and
+    # the engine never auto-commits one. Display-only: the charge is worked out
+    # from the committed path, not from this list.
+    requires_disguise: list[str] = Field(default_factory=list)
     # For split movement: if we've already partially moved, remember what's left.
     remaining_steps: int = 0
     # Segmented moves carry a target (who to stop at) during split-7 second leg.
@@ -214,6 +271,25 @@ class PendingMove(BaseModel):
     roller_steps_after_target: int = 0
 
 
+class DeferredSplitLeg(BaseModel):
+    """Half of a split-7 that couldn't run when its turn came round.
+
+    Whichever leg goes first can land somewhere that opens a prompt — a raven
+    card, a jewel attempt, a "change a card" square. Running the other leg then
+    and there would overwrite that phase and strand whoever owes the answer, so
+    it's parked here and picked up once the prompt is closed. Dropping it
+    instead would silently cost somebody part of a roll that was legitimately
+    made.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["roller", "target"]
+    steps: int
+    target: Optional[str] = None
+    target_destination: Optional[str] = None
+
+
 class TurnContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -230,6 +306,7 @@ class TurnContext(BaseModel):
     pending_jewel: Optional[PendingJewelAttempt] = None
     pending_split: Optional[PendingSplitSeven] = None
     pending_card_change: Optional[PendingCardChange] = None
+    deferred_split_leg: Optional[DeferredSplitLeg] = None
     # For ``binary_disruption`` and split-7: allow the roller to choose splits
     # on an arbitrary roll; we record the effective total here.
     binary_disruption_armed: bool = False
@@ -293,7 +370,13 @@ class GameState(BaseModel):
     # Jewels + coins
     jewels_available: dict[JewelId, str] = Field(default_factory=dict)  # jewel -> space_id
     loose_jewels: dict[str, list[JewelId]] = Field(default_factory=dict)  # space_id -> jewels
-    coins_available: int = 5  # enough for 5 players; the board sits at devereux
+    # The Devereux Tower holds one coin more than there are players, so exactly
+    # one player can always be left short. ``coins_total`` is the size of that
+    # pile (set at ``start_game``); ``coins_available`` is how many are still
+    # sitting in the tower. Coins handed back — the Rack toll, a fight won by
+    # someone already holding one — go back onto the pile, never above the cap.
+    coins_total: int = 5
+    coins_available: int = 5
 
     # Warders
     warders: list[Warder] = Field(default_factory=list)
@@ -316,6 +399,12 @@ class GameState(BaseModel):
     # it. Survives the per-turn TurnContext reset so late-arriving clients
     # still see it.
     active_raven_notice: Optional[RavenNotice] = None
+
+    # Confinement notice: the red counterpart to the raven notice. Raised
+    # automatically by ``rules.apply`` whenever a player's status crosses into
+    # confinement, from whichever route; cleared by the victim, by a later
+    # confinement, or by their release.
+    active_confinement_notice: Optional[ConfinementNotice] = None
 
     # Win results
     winner: Optional[str] = None

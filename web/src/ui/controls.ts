@@ -8,6 +8,26 @@ import type { WsClient } from "../net/ws.js";
 import type { ClientState } from "../state.js";
 import { currentTurnUsername, playerByName } from "../state.js";
 import { towerCardIcon } from "./card_art.js";
+import { summonsLocationLabel } from "./card_descriptions.js";
+
+// ---------------------------------------------------------------------------
+// Card-trade picker state
+// ---------------------------------------------------------------------------
+//
+// Which cards the player has ticked for a trade, and whether the picker is open
+// at all. Local rather than server state — nobody else needs to see a selection
+// that hasn't been committed — but module-level, because this panel is
+// re-rendered wholesale on every snapshot and DOM state wouldn't survive.
+
+let tradeOpen = false;
+const tradePicked = new Set<string>();
+/** Turn the picker was opened on, so a new turn closes it. */
+let tradeTurnKey = "";
+
+function closeTrade(): void {
+  tradeOpen = false;
+  tradePicked.clear();
+}
 
 export function renderControlsPanel(root: HTMLElement): { update: (state: ClientState, ws: WsClient) => void } {
   root.innerHTML = `
@@ -76,6 +96,15 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   const me = playerByName(g, you);
   const isMyTurn = cur === you;
 
+  // A trade is only offered instead of rolling, so anything that moves the turn
+  // on — or moves it past the roll — abandons a half-made selection.
+  const turnKey = `${cur ?? ""}#${g.turn.roll.join(",")}`;
+  const tradeable = isMyTurn && (g.phase === "TURN_START" || g.phase === "PRE_ROLL");
+  if (!tradeable || turnKey !== tradeTurnKey) {
+    if (tradeOpen) closeTrade();
+    tradeTurnKey = turnKey;
+  }
+
   info.innerHTML = `
     <div>Phase: <strong>${g.phase}</strong></div>
     <div>Turn: <strong>${cur ?? "—"}</strong>${isMyTurn ? " (you)" : ""}</div>
@@ -107,7 +136,21 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   renderNewGameButton(root, you, ws);
 
   if (!isMyTurn) {
+    // The raven drawer isn't always the player whose turn it is: a split-7 leg
+    // can shove an opponent onto a raven square, and the card that lands is
+    // theirs to resolve. Without this the table waits on a prompt that never
+    // appears for anyone.
+    if (g.phase === "RAVEN_EFFECT" && g.turn.pending_raven?.drawer === you) {
+      renderRavenEffect(pending, row, state, ws);
+      return;
+    }
     pending.textContent = cur ? `Waiting for ${cur}…` : "";
+    // A locked-up player may still buy their way out while somebody else is
+    // acting. This is the only window a racked player has at all — their own
+    // turn is skipped outright — so without it a Rack Pardon is unplayable.
+    if (me && ["IMPRISONED", "TORTURED", "RACKED"].includes(me.status)) {
+      renderPreRollCardButtons(pending, g, me, you, state, ws, SELF_RESCUE_EFFECTS);
+    }
     return;
   }
 
@@ -181,6 +224,25 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           ),
         );
       }
+      // Trade cards instead of rolling: stay put, hand in n cards, take n - 1
+      // back. Sits next to Roll because it is the alternative to it.
+      if (me && !missing) {
+        const handSize = me.hand.length;
+        const trade = button(
+          tradeOpen ? "Cancel trade" : "Trade cards…",
+          () => {
+            if (tradeOpen) closeTrade();
+            else { tradeOpen = true; tradePicked.clear(); }
+            updateControls(root, state, ws);
+          },
+        );
+        if (handSize < 2 && !tradeOpen) {
+          trade.disabled = true;
+          trade.title = "You need at least 2 cards — the trade costs you one";
+        }
+        row.appendChild(trade);
+      }
+      if (tradeOpen && me) renderTradePicker(pending, me, you, state, ws, root);
       renderPreRollCardButtons(pending, g, me, you, state, ws);
       break;
     }
@@ -207,15 +269,26 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           if (p.username !== you && !p.escaped) enemyAt.set(p.position, p.username);
         }
         const combatStops = keys.filter((k) => enemyAt.has(k));
+        // Routes the server will charge a Disguise for. They're offered
+        // alongside the free ones precisely so the card can be held back until
+        // the roll is known to be big enough to be worth spending it on.
+        const needsDisguise = new Set(pm?.requires_disguise ?? []);
         pending.innerHTML =
           `<div>Click a highlighted square (${keys.length} option${keys.length === 1 ? "" : "s"}) or pick here:</div>` +
           (combatStops.length
             ? `<div style="margin-top:0.25rem;color:var(--accent);font-size:0.8rem">` +
               `Destinations marked <strong>[fight]</strong> stop at an enemy and end your turn after combat.</div>`
+            : "") +
+          (needsDisguise.size
+            ? `<div style="margin-top:0.25rem;color:var(--accent);font-size:0.8rem">` +
+              `Destinations marked <strong>[uses Disguise]</strong> slip past a Yeoman Warder ` +
+              `and spend the card. Dashed outline on the board.</div>`
             : "");
         for (const d of keys) {
           const enemy = enemyAt.get(d);
-          const label = enemy ? `[fight] ${d} (vs ${enemy})` : d;
+          const tags =
+            (enemy ? "[fight] " : "") + (needsDisguise.has(d) ? "[uses Disguise] " : "");
+          const label = `${tags}${d}${enemy ? ` (vs ${enemy})` : ""}`;
           row.appendChild(button(label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
       }
@@ -260,6 +333,10 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
 
     case "TURN_END":
       row.appendChild(button("End turn", () => ws.send("end_turn", { username: you }).catch(noop)));
+      // Some cards only become worth playing — or legal at all — once the move
+      // is over: the extra turn you now know you need, the retreat from where
+      // you actually landed, the Confession answering a Bowyer Tower sentence.
+      renderPreRollCardButtons(pending, g, me, you, state, ws, POST_MOVE_PLAYABLE_EFFECTS);
       break;
   }
 }
@@ -348,6 +425,81 @@ function renderCardChange(
   pending.appendChild(grid);
 }
 
+/**
+ * Multi-select card picker for a trade.
+ *
+ * Same tiles as the swap/discard prompts, but toggling rather than committing on
+ * click: the whole point of the rule is choosing a *set*, and the count you get
+ * back (one fewer than you hand in) has to be visible while you choose.
+ */
+function renderTradePicker(
+  pending: HTMLElement,
+  me: import("../state.js").GamePlayer,
+  you: string | null,
+  state: ClientState,
+  ws: WsClient,
+  root: HTMLElement,
+): void {
+  const hand = me.hand ?? [];
+  // Cards may have left the hand since the last click (a swap, a fight).
+  for (const id of [...tradePicked]) {
+    if (!hand.some((c) => c.id === id)) tradePicked.delete(id);
+  }
+  const n = tradePicked.size;
+  const back = Math.max(0, n - 1);
+
+  const box = document.createElement("div");
+  box.style.marginTop = "0.5rem";
+  box.style.paddingTop = "0.5rem";
+  box.style.borderTop = "1px solid var(--border, #333)";
+  box.innerHTML =
+    `<div>Hand in any number of cards and draw back <strong>one fewer</strong>. ` +
+    `You stay where you are and don't roll.</div>` +
+    `<div style="margin-top:0.3rem;color:${n >= 2 ? "var(--accent)" : "var(--muted)"}">` +
+    (n === 0
+      ? "Pick the cards you want rid of."
+      : n === 1
+        ? "1 selected — a single card would buy you nothing. Pick another."
+        : `${n} selected → you draw ${back} card${back === 1 ? "" : "s"}.`) +
+    `</div>`;
+
+  const grid = document.createElement("div");
+  grid.className = "card-tile-grid";
+  grid.style.marginTop = "0.6rem";
+  for (const c of hand) {
+    const picked = tradePicked.has(c.id);
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "card-tile" + (picked ? " is-selected" : "");
+    tile.setAttribute("aria-pressed", picked ? "true" : "false");
+    tile.title = picked ? `Keep ${c.name}` : `Trade away ${c.name}`;
+    tile.innerHTML =
+      (c.value ? `<span class="card-tile-value">${c.value}</span>` : "") +
+      `<span class="card-tile-art">${towerCardIcon(c.name, 40)}</span>` +
+      `<span class="card-tile-name">${escapeHtml(c.name)}</span>`;
+    tile.addEventListener("click", () => {
+      if (tradePicked.has(c.id)) tradePicked.delete(c.id);
+      else tradePicked.add(c.id);
+      updateControls(root, state, ws);
+    });
+    grid.appendChild(tile);
+  }
+  box.appendChild(grid);
+
+  const confirm = button(
+    n >= 2 ? `Trade ${n} for ${back}` : "Trade",
+    () => {
+      const ids = [...tradePicked];
+      closeTrade();
+      ws.send("redraw_cards", { username: you, card_ids: ids }).catch(noop);
+    },
+  );
+  confirm.disabled = n < 2;
+  confirm.style.marginTop = "0.5rem";
+  box.appendChild(confirm);
+  pending.appendChild(box);
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (ch) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!
@@ -361,7 +513,12 @@ function renderSplitSeven(
   you: string | null,
   ws: WsClient,
 ): void {
-  const total = Number((g.turn.pending_split as { total?: number } | null)?.total ?? 7);
+  const split = g.turn.pending_split;
+  const total = Number(split?.total ?? 7);
+  // The server works out who a given leg size could actually move; anyone
+  // boxed in (an un-accredited piece stuck on Queen's House, say) simply
+  // isn't offered, and a leg they can't use isn't either.
+  const movable = split?.movable_targets ?? {};
   pending.innerHTML = `
     <div>Split the roll of <strong>${total}</strong> between yourself and another player.</div>
     <div style="margin-top:0.4rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
@@ -381,37 +538,67 @@ function renderSplitSeven(
         </select>
       </label>
     </div>
+    <div id="split-note" style="margin-top:0.35rem;font-size:0.8rem;color:var(--muted)"></div>
   `;
   const selSelf = pending.querySelector<HTMLSelectElement>("#split-nself")!;
   const spanOther = pending.querySelector<HTMLElement>("#split-nother")!;
   const selTarget = pending.querySelector<HTMLSelectElement>("#split-target")!;
-  // n_self: 1..total (must take at least 1 per Outrage rules).
+  const note = pending.querySelector<HTMLElement>("#split-note")!;
+
+  // Leg sizes somebody could use. total (= keep it all) is always available.
+  const usableOther = new Set<number>([0]);
+  for (const legs of Object.values(movable)) for (const n of legs) usableOther.add(n);
   for (let i = 1; i <= total; i++) {
+    if (!usableOther.has(total - i)) continue;
     const o = document.createElement("option");
     o.value = String(i);
     o.textContent = String(i);
     selSelf.appendChild(o);
   }
   selSelf.value = String(total);
-  const updateOther = () => {
-    const nself = Number(selSelf.value);
-    spanOther.textContent = String(total - nself);
-    selTarget.disabled = total - nself === 0;
-  };
-  selSelf.addEventListener("change", updateOther);
 
-  const none = document.createElement("option");
-  none.value = "";
-  none.textContent = "—";
-  selTarget.appendChild(none);
-  for (const p of g.players) {
-    if (p.username === you || p.escaped) continue;
-    const o = document.createElement("option");
-    o.value = p.username;
-    o.textContent = p.username;
-    selTarget.appendChild(o);
-  }
-  updateOther();
+  const refreshTargets = () => {
+    const nother = total - Number(selSelf.value);
+    spanOther.textContent = String(nother);
+    const previous = selTarget.value;
+    selTarget.innerHTML = "";
+    if (nother === 0) {
+      selTarget.disabled = true;
+      note.textContent = "";
+      return;
+    }
+    const eligible = g.players.filter(
+      (p) => p.username !== you && !p.escaped && (movable[p.username] ?? []).includes(nother),
+    );
+    // With exactly one player this leg could move there is nothing to decide,
+    // so fill it in and lock the picker rather than making the roller confirm
+    // the only legal answer. (Zero movable players never reaches this screen —
+    // ``_intent_roll_dice`` hands the roller the whole roll instead.)
+    const forced = eligible.length === 1;
+    selTarget.disabled = forced;
+    if (!forced) {
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "—";
+      selTarget.appendChild(none);
+    }
+    for (const p of eligible) {
+      const o = document.createElement("option");
+      o.value = p.username;
+      o.textContent = p.username;
+      selTarget.appendChild(o);
+    }
+    if (forced) selTarget.value = eligible[0].username;
+    else if (eligible.some((p) => p.username === previous)) selTarget.value = previous;
+    const stuck = g.players.filter(
+      (p) => p.username !== you && !p.escaped && !(movable[p.username] ?? []).length,
+    );
+    note.textContent = stuck.length
+      ? `${stuck.map((p) => p.username).join(", ")} can't be moved at all this roll.`
+      : "";
+  };
+  selSelf.addEventListener("change", refreshTargets);
+  refreshTargets();
 
   row.appendChild(button("Commit split", () => {
     const nself = Number(selSelf.value);
@@ -469,29 +656,36 @@ function renderRavenEffect(
 
   switch (pr.effect_key) {
     case "go_to_location": {
-      if ((pr.params as { location?: string }).location !== "player_choice") {
-        pending.textContent = "Resolving raven card…";
-        return;
+      // A Summons can always be refused — the cost is your next turn.
+      const loc = (pr.params as { location?: string }).location;
+      const anywhere = loc === "player_choice";
+      const destLabel = anywhere ? "a tower of your choice" : summonsLocationLabel(loc);
+      pending.innerHTML =
+        `<div>Raven — <strong>Summons</strong> to ${escapeHtml(destLabel)}.</div>` +
+        `<div style="margin-top:0.25rem">Obey it, or refuse and miss your next turn.</div>`;
+      if (anywhere) {
+        const sel = document.createElement("select");
+        sel.style.marginTop = "0.4rem";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "—";
+        sel.appendChild(placeholder);
+        const spaces = [...(state.board?.spaces ?? [])].sort((a, b) => a.label.localeCompare(b.label));
+        for (const s of spaces) {
+          const o = document.createElement("option");
+          o.value = s.id;
+          o.textContent = s.label || s.id;
+          sel.appendChild(o);
+        }
+        pending.appendChild(sel);
+        row.appendChild(button("Go", () => {
+          if (!sel.value) return;
+          sendResolve({ accept: true, chosen: sel.value });
+        }));
+      } else {
+        row.appendChild(button("Obey the summons", () => sendResolve({ accept: true })));
       }
-      pending.innerHTML = `<div>Raven — choose any space to move to.</div>`;
-      const sel = document.createElement("select");
-      sel.style.marginTop = "0.4rem";
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "—";
-      sel.appendChild(placeholder);
-      const spaces = [...(state.board?.spaces ?? [])].sort((a, b) => a.label.localeCompare(b.label));
-      for (const s of spaces) {
-        const o = document.createElement("option");
-        o.value = s.id;
-        o.textContent = s.label || s.id;
-        sel.appendChild(o);
-      }
-      pending.appendChild(sel);
-      row.appendChild(button("Go", () => {
-        if (!sel.value) return;
-        sendResolve({ chosen: sel.value });
-      }));
+      row.appendChild(button("Refuse (miss next turn)", () => sendResolve({ decline: true })));
       break;
     }
 
@@ -636,6 +830,32 @@ const PRE_ROLL_PLAYABLE_EFFECTS = new Set([
   "firecrackers",
   "lasso",
   "binary_disruption",
+  // Escape hatches. These were missing entirely, so a locked-up player holding
+  // a Pardon or a Confession had no way to play it.
+  "royal_pardon",
+  "rack_pardon",
+  "traversal_beauchamp_escape",
+  "confession",
+]);
+
+// Mirrors SELF_RESCUE_EFFECTS in server/game/rules.py: cards a confined player
+// may play at any moment, their turn or not.
+const SELF_RESCUE_EFFECTS = new Set([
+  "royal_pardon",
+  "rack_pardon",
+  "traversal_beauchamp_escape",
+]);
+
+// Mirrors POST_MOVE_PLAYABLE_EFFECTS in server/game/rules.py: what's still
+// legal at TURN_END, once the dice are down and the move is over. Keep the two
+// in step — the server rejects anything outside its own set.
+const POST_MOVE_PLAYABLE_EFFECTS = new Set([
+  "tower_pass",
+  "sanctuary",
+  "confession",
+  "royal_pardon",
+  "rack_pardon",
+  "traversal_beauchamp_escape",
 ]);
 
 function renderPreRollCardButtons(
@@ -645,18 +865,23 @@ function renderPreRollCardButtons(
   you: string | null,
   state: ClientState,
   ws: WsClient,
+  allowed: Set<string> = PRE_ROLL_PLAYABLE_EFFECTS,
 ): void {
   if (!me || !you) return;
   const playable = me.hand.filter(
-    (c) => c.kind === "tower" && c.effect_key && PRE_ROLL_PLAYABLE_EFFECTS.has(c.effect_key),
+    (c) => c.kind === "tower" && c.effect_key && allowed.has(c.effect_key),
   );
   if (playable.length === 0) return;
 
+  const postMove = allowed === POST_MOVE_PLAYABLE_EFFECTS;
   const section = document.createElement("div");
   section.style.marginTop = "0.5rem";
   section.style.paddingTop = "0.5rem";
   section.style.borderTop = "1px solid var(--border, #333)";
-  section.innerHTML = `<div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.3rem">Play a card:</div>`;
+  section.innerHTML =
+    `<div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.3rem">` +
+    (postMove ? "Play a card before you end your turn:" : "Play a card:") +
+    `</div>`;
   const cardsRow = document.createElement("div");
   cardsRow.style.display = "flex";
   cardsRow.style.flexDirection = "column";
@@ -667,6 +892,17 @@ function renderPreRollCardButtons(
   const inWhiteTower =
     state.board?.spaces.find((s) => s.id === me.position)?.region === "white_tower";
   const alreadyArmed = !!g.turn.binary_disruption_armed;
+  const status = me.status;
+  const confined = status === "IMPRISONED" || status === "TORTURED" || status === "RACKED";
+  const atBeauchamp = state.board && me.position === state.board.beauchamp_tower_space;
+  // Confession swaps you with someone who is walking free — you can't hand your
+  // sentence to a player already behind a different door.
+  const frameable = g.players.filter(
+    (p) =>
+      p.username !== you &&
+      !p.escaped &&
+      !["IMPRISONED", "TORTURED", "RACKED"].includes(p.status),
+  );
 
   const playedIds = new Set<string>();
   for (const card of playable) {
@@ -697,9 +933,71 @@ function renderPreRollCardButtons(
         wrap.appendChild(button("Extra turn", () => send({ mode: "extra_turn" })));
         break;
       }
-      case "sanctuary":
-        wrap.appendChild(button(`Play ${card.name} → Chapel Royal`, () => send({})));
+      case "sanctuary": {
+        // Chapel Royal is in the Inner Ward, which is closed to you until the
+        // clerks have signed you in — and locked away entirely if you are.
+        const b = button(`Play ${card.name} → Chapel Royal`, () => send({}));
+        if (!me.accredited) {
+          b.disabled = true;
+          b.title = "You must be accredited to enter the Inner Ward";
+        } else if (confined) {
+          b.disabled = true;
+          b.title = "You cannot claim Sanctuary while locked up";
+        }
+        wrap.appendChild(b);
         break;
+      }
+      case "royal_pardon": {
+        const b = button(`Play ${card.name}`, () => send({}));
+        if (status !== "IMPRISONED" && status !== "TORTURED") {
+          b.disabled = true;
+          b.title = "Only works while imprisoned or under questioning";
+        }
+        wrap.appendChild(b);
+        break;
+      }
+      case "rack_pardon": {
+        const b = button(`Play ${card.name}`, () => send({}));
+        if (status !== "RACKED") {
+          b.disabled = true;
+          b.title = "Only works while on the Rack";
+        }
+        wrap.appendChild(b);
+        break;
+      }
+      case "traversal_beauchamp_escape": {
+        const b = button(`Escape with the ${card.name}`, () => send({}));
+        if (status !== "IMPRISONED" || !atBeauchamp) {
+          b.disabled = true;
+          b.title = "Only works while imprisoned in the Beauchamp Tower";
+        }
+        wrap.appendChild(b);
+        break;
+      }
+      case "confession": {
+        const label = document.createElement("span");
+        label.textContent = `${card.name} — frame:`;
+        label.style.fontSize = "0.85rem";
+        wrap.appendChild(label);
+        if (status !== "TORTURED") {
+          const n = document.createElement("span");
+          n.textContent = "only under questioning at the Bowyer Tower";
+          n.style.color = "var(--muted)";
+          n.style.fontSize = "0.8rem";
+          wrap.appendChild(n);
+        } else if (frameable.length === 0) {
+          const n = document.createElement("span");
+          n.textContent = "nobody left to frame";
+          n.style.color = "var(--muted)";
+          n.style.fontSize = "0.8rem";
+          wrap.appendChild(n);
+        } else {
+          for (const t of frameable) {
+            wrap.appendChild(button(t.username, () => send({ target: t.username })));
+          }
+        }
+        break;
+      }
       case "disguise":
         wrap.appendChild(button(`Play ${card.name}`, () => send({})));
         break;

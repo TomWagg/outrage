@@ -33,22 +33,28 @@ class MoveOptions:
       (inclusive). For single-path movement this dict has exactly one entry.
     - ``intermediate_enemies`` lists spaces on any path that contain other
       players — potential combat-initiation or Lasso trigger points.
+    - ``requires_disguise`` is the subset of ``destinations`` whose route runs
+      through an occupied Yeoman Warder post. Reaching them costs the mover a
+      Disguise card, spent at commit time, so the caller must not auto-commit
+      one of these.
     - ``forced_single`` indicates movement cannot branch (wall-walk forward-
       only, or there is literally one valid destination) and can be auto-
       committed by the caller.
     """
 
-    __slots__ = ("destinations", "intermediate_enemies", "forced_single")
+    __slots__ = ("destinations", "intermediate_enemies", "requires_disguise", "forced_single")
 
     def __init__(
         self,
         destinations: dict[str, list[str]],
         intermediate_enemies: dict[str, list[str]],
         forced_single: bool,
+        requires_disguise: Optional[set[str]] = None,
     ):
         self.destinations = destinations
         self.intermediate_enemies = intermediate_enemies
         self.forced_single = forced_single
+        self.requires_disguise = requires_disguise or set()
 
     def only_destination(self) -> Optional[str]:
         if len(self.destinations) == 1:
@@ -64,6 +70,8 @@ def compute_destinations(
     warder_blocking_spaces: Optional[Iterable[str]] = None,
     other_player_positions: Optional[Iterable[str]] = None,
     visited_this_turn: Optional[Iterable[str]] = None,
+    allow_combat_stops: bool = True,
+    disguise_available: bool = False,
 ) -> MoveOptions:
     """Enumerate legal terminal squares for a move of ``steps``.
 
@@ -76,6 +84,21 @@ def compute_destinations(
     ``visited_this_turn`` supplies the squares the player has already stood on
     this turn — under ``rules.no_revisit_during_turn`` those cannot be re-entered
     by any path of this move.
+
+    ``allow_combat_stops=False`` drops those truncated entries: the move must
+    be walked in full. Split-7 legs use this. There the step count is chosen
+    deliberately rather than rolled, so a player who wants a fight picks the
+    exact leg that reaches their opponent — letting them also stop short would
+    hand out a second, free choice of distance and let a leg of 4 be spent as a
+    leg of 1. Landing *exactly* on an enemy still starts a fight; only stopping
+    early is refused.
+
+    ``disguise_available=True`` says the mover is holding a Disguise but has not
+    played it. Routes through an occupied post are then enumerated *as well*, and
+    reported in ``requires_disguise`` for the caller to charge the card for. A
+    Disguise is worth nothing until you know you rolled far enough to use it, so
+    the decision belongs here — at the point the destinations are chosen — rather
+    than before the dice leave the hand.
     """
     if steps <= 0:
         return MoveOptions({}, {}, True)
@@ -93,31 +116,63 @@ def compute_destinations(
         blocked=blocked,
         visited=visited_this_turn,
     )
+    # Second sweep with the posts open, for a mover carrying a Disguise. Run
+    # after the free sweep and only for destinations it didn't reach, so a
+    # square with a warder-free route is never billed for the card.
+    raw_via_post: dict[str, list[str]] = {}
+    if disguise_available and blocked:
+        raw_via_post = board.reachable(
+            from_space,
+            steps,
+            forward_only=forward_only,
+            visited=visited_this_turn,
+        )
 
     others = set(other_player_positions or ())
     destinations: dict[str, list[str]] = {}
     intermediate_enemies: dict[str, list[str]] = {}
-    for dest, path in raw.items():
-        destinations[dest] = path
+    requires_disguise: set[str] = set()
+
+    def record(dest: str, path: list[str]) -> None:
+        if dest not in destinations:
+            destinations[dest] = path
+            if any(sid in blocked for sid in path[1:]):
+                requires_disguise.add(dest)
         enemies_on_path = [sid for sid in path[1:] if sid in others]
-        if enemies_on_path:
-            intermediate_enemies[dest] = enemies_on_path
-            # Also surface each pass-through enemy as its own early-stop
-            # destination so the client can show it as a clickable square.
-            for sid in enemies_on_path:
-                if sid == dest:
-                    continue
-                idx = path.index(sid)
-                if sid not in destinations:
-                    destinations[sid] = path[: idx + 1]
+        if not enemies_on_path:
+            return
+        intermediate_enemies[dest] = enemies_on_path
+        if not allow_combat_stops:
+            return
+        # Also surface each pass-through enemy as its own early-stop
+        # destination so the client can show it as a clickable square.
+        for sid in enemies_on_path:
+            if sid == dest or sid in destinations:
+                continue
+            prefix = path[: path.index(sid) + 1]
+            destinations[sid] = prefix
+            # Stopping short of the post is free even on a disguise route.
+            if any(x in blocked for x in prefix[1:]):
+                requires_disguise.add(sid)
+
+    for dest, path in raw.items():
+        record(dest, path)
+    for dest, path in raw_via_post.items():
+        if dest in destinations:
+            continue
+        record(dest, path)
 
     # If the move forces the player through an enemy they can choose to stop
-    # at for combat, that is a real decision — don't auto-commit.
-    has_combat_choice = bool(intermediate_enemies)
-    forced_single = (not has_combat_choice) and (
-        forward_only or (len(destinations) == 1)
+    # at for combat, that is a real decision — don't auto-commit. Nor when a
+    # destination would cost the mover their Disguise: spending a card is never
+    # something to do on the player's behalf.
+    has_combat_choice = allow_combat_stops and bool(intermediate_enemies)
+    forced_single = (
+        (not has_combat_choice)
+        and not requires_disguise
+        and (forward_only or (len(destinations) == 1))
     )
-    return MoveOptions(destinations, intermediate_enemies, forced_single)
+    return MoveOptions(destinations, intermediate_enemies, forced_single, requires_disguise)
 
 
 def split_movement(
@@ -129,6 +184,7 @@ def split_movement(
     warder_blocking_spaces: Optional[Iterable[str]] = None,
     other_player_positions: Optional[Iterable[str]] = None,
     visited_this_turn: Optional[Iterable[str]] = None,
+    allow_combat_stops: bool = True,
 ) -> tuple[MoveOptions, int]:
     """Helper for split-7-style segmented movement.
 
@@ -147,5 +203,6 @@ def split_movement(
         warder_blocking_spaces=warder_blocking_spaces,
         other_player_positions=other_player_positions,
         visited_this_turn=visited_this_turn,
+        allow_combat_stops=allow_combat_stops,
     )
     return opts, total_steps - split_first

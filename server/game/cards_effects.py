@@ -126,7 +126,7 @@ def send_to_rack(state: GameState, player: PlayerState, board: Board) -> EventLi
     player.status_turns_remaining = 3
     if player.has_coin:
         player.has_coin = False
-        state.coins_available = min(5, state.coins_available + 1)
+        state.coins_available = min(state.coins_total, state.coins_available + 1)
         evs.append(_event("rack_coin_lost", player=player.username))
     else:
         lost = player.hand
@@ -170,6 +170,9 @@ def _sanctuary(state, player, params, *, board, rng, **kw):
     """
     if not player.accredited:
         raise EffectError("Sanctuary can only be used by an accredited player")
+    if player.confined:
+        # The Chapel is on the other side of a locked door.
+        raise EffectError("You cannot claim Sanctuary while locked up")
     evs = _send_to(state, player, board.data.chapel_royal_space, board)
     return state, evs
 
@@ -209,7 +212,14 @@ def _confession(state, player, params, *, board, rng, **kw):
     target_name = params.get("target")
     if not target_name:
         raise EffectError("Confession requires a target player")
+    if target_name == player.username:
+        raise EffectError("You cannot confess against yourself")
     target = state.player(target_name)
+    if target.escaped:
+        raise EffectError(f"{target_name} has already left the Tower")
+    if target.confined:
+        # They're already behind a different door; there's no swap to make.
+        raise EffectError(f"{target_name} is already locked up")
     # The framed player inherits the framer's remaining torture counter,
     # not a fresh 3 turns.
     remaining = max(0, int(player.status_turns_remaining))
@@ -274,6 +284,10 @@ def _lasso(state, player, params, *, board, rng, **kw):
     target = state.player(target_name)
     if target.username == player.username:
         raise EffectError("Cannot Lasso yourself")
+    if target.confined:
+        raise EffectError(f"{target_name} is locked up and cannot be moved")
+    if player.confined:
+        raise EffectError("You cannot throw a Lasso while locked up")
     dist_map = board.reachable_within(player.position, 5)
     if target.position not in dist_map:
         raise EffectError(f"Target {target_name!r} not within 5 spaces of you")
@@ -319,11 +333,26 @@ def _location_from_params(params: dict[str, Any], board: Board) -> Optional[str]
 
 @register("go_to_location")
 def _go_to_location(state, player, params, *, board, rng, **kw):
-    """Move to a fixed location, or ask the player if ``player_choice``."""
+    """A Summons: obey it, or refuse and forfeit your next turn instead.
+
+    The choice is always the player's, so the card parks itself for input even
+    when the destination is fixed. ``params`` comes back as ``{"decline": True}``
+    to refuse, or ``{"accept": True}`` (plus ``chosen`` for the "any tower you
+    like" variant) to go.
+    """
+    if params.get("decline"):
+        player.miss_next_turn = True
+        return state, [_event(
+            "summons_declined", player=player.username,
+            location=params.get("location"),
+        )]
+    player_choice = params.get("location") == "player_choice"
+    if not params.get("accept") and not (player_choice and params.get("chosen")):
+        return state, [_event(
+            "raven_needs_input",
+            input_kind="choose_location" if player_choice else "summons",
+        )]
     loc = _location_from_params(params, board)
-    if params.get("location") == "player_choice" and not params.get("chosen"):
-        # Wait for input.
-        return state, [_event("raven_needs_input", input_kind="choose_location")]
     if loc is None:
         # Resolve from chosen parameter.
         loc = params.get("chosen")

@@ -128,6 +128,12 @@ const LOCATION_LABELS: Record<string, string> = {
   player_choice: "any tower of the drawer's choice",
 };
 
+/** Human name for a Summons destination, for prompts outside the card modal. */
+export function summonsLocationLabel(location: string | undefined): string {
+  if (!location) return "a location";
+  return LOCATION_LABELS[location] ?? location.replace(/_/g, " ");
+}
+
 const JEWEL_LABELS: Record<string, string> = {
   sword: "the Sword",
   sceptre: "the Sceptre",
@@ -286,6 +292,63 @@ function slugify(s: string): string {
 const TOWER_CARDS_BY_SLUG: Record<string, CardCopy> = Object.fromEntries(
   Object.entries(TOWER_CARDS).map(([name, copy]) => [slugify(name), copy]),
 );
+
+// ---- Confinement banner ---------------------------------------------------
+
+const CONFINEMENT_CAUSE_LEAD: Record<string, string> = {
+  landed:        "The door was open. It is not open now.",
+  three_doubles: "Three doubles in a row. The guards took an interest.",
+  rack_sender:   "A tripwire, an alarm bell, and a great many boots on stone.",
+  firecrackers:  "The White Tower is no place to linger once the powder goes up.",
+  raven:         "The ravens saw. The ravens always see.",
+  searched:      "Stopped, searched, and found wanting.",
+  combat:        "You lost the fight, and the fight was the easy part.",
+  framed:        "Somebody signed a confession. It had your name on it.",
+};
+
+/**
+ * Copy for the red confinement banner.
+ *
+ * Deliberately theatrical: being locked up is the worst thing that happens to a
+ * player who isn't losing a fight, and it used to register as nothing more than
+ * a status word in the side panel.
+ */
+export function confinementCopy(
+  status: string,
+  opts: { turns?: number; cause?: string; you: boolean; username: string },
+): CardCopy {
+  const who = opts.you ? "You are" : `${opts.username} is`;
+  const sentence = opts.turns
+    ? ` ${opts.turns} turn${opts.turns === 1 ? "" : "s"} to serve.`
+    : "";
+  const lead = CONFINEMENT_CAUSE_LEAD[opts.cause ?? ""] ?? "";
+  const prefix = lead ? `${lead} ` : "";
+
+  if (status === "RACKED") {
+    return {
+      title: "The Rack",
+      description:
+        `${prefix}${who} strapped to the rack beneath the White Tower. ` +
+        `No dice will help — the wheel turns at its own pace and stops when ` +
+        `it is finished.${sentence}`,
+    };
+  }
+  if (status === "TORTURED") {
+    return {
+      title: "Taken for Questioning",
+      description:
+        `${prefix}${who} held in the Bowyer Tower, where the questions are ` +
+        `patient and the answers are written down. Roll a double to walk out ` +
+        `— or find somebody else to blame.${sentence}`,
+    };
+  }
+  return {
+    title: "Imprisoned",
+    description:
+      `${prefix}${who} locked in a cell with a very good view of the ` +
+      `courtyard and no way down to it. Roll a double to get out.${sentence}`,
+  };
+}
 
 export function towerCardCopy(name: string): CardCopy {
   return TOWER_CARDS[name]

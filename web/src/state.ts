@@ -71,6 +71,9 @@ export interface PendingMove {
   destinations?: Record<string, string[]>;
   remaining_steps?: number;
   has_destinations?: boolean;
+  /** Destinations whose only route crosses a manned Yeoman Warder post;
+   *  committing to one spends a Disguise from hand. */
+  requires_disguise?: string[];
   /** True when the roller is choosing where the split-7 *target* moves. */
   is_for_target?: boolean;
   /** The target player's username when is_for_target is set. */
@@ -111,6 +114,15 @@ export interface RavenNotice {
   revealed: boolean;
 }
 
+export interface ConfinementNotice {
+  username: string;
+  status: "IMPRISONED" | "TORTURED" | "RACKED";
+  space_id: string;
+  turns: number;
+  /** Why they're in there, for the banner copy; "" if the route is unknown. */
+  cause: string;
+}
+
 export interface PendingCardChange {
   /** "change" = discard one, draw the top of the tower deck (ww41/58/69).
    *  "swap"   = give a chosen card to a chosen opponent, get a random one back. */
@@ -118,6 +130,14 @@ export interface PendingCardChange {
   space_id: string;
   /** Opponents eligible for a swap; empty for a plain change. */
   candidates: string[];
+}
+
+export interface PendingSplitSeven {
+  total: number;
+  source: "seven" | "binary_disruption";
+  /** username → the leg sizes that would actually move them. A player with no
+   *  entry here can't be given any of the roll. */
+  movable_targets: Record<string, number[]>;
 }
 
 export interface TurnContext {
@@ -129,7 +149,7 @@ export interface TurnContext {
   pending_move: PendingMove | null;
   pending_raven: PendingRavenEffect | null;
   pending_jewel: Record<string, unknown> | null;
-  pending_split: Record<string, unknown> | null;
+  pending_split: PendingSplitSeven | null;
   pending_card_change: PendingCardChange | null;
   binary_disruption_armed?: boolean;
 }
@@ -143,7 +163,10 @@ export interface GameSnapshot {
   turn: TurnContext;
   jewels_available: Record<string, string>;
   loose_jewels: Record<string, string[]>;
+  /** Coins still sitting in the Devereux Tower. */
   coins_available: number;
+  /** Size of the pile the game started with (players + 1). */
+  coins_total: number;
   warders: { id: string; location: string }[];
   combat: Combat | null;
   tower_draw_count: number;
@@ -156,6 +179,9 @@ export interface GameSnapshot {
   finished_slow_order: string[];
   firecrackers_affected?: string[];
   active_raven_notice?: RavenNotice | null;
+  /** Red banner shown to the whole table when somebody is locked up. Only the
+   *  player named on it may dismiss it. */
+  active_confinement_notice?: ConfinementNotice | null;
   seed: number;
 }
 
@@ -184,7 +210,18 @@ export interface BoardData {
     bidirectional?: boolean;
     path_coords?: [number, number][];
   }[];
-  traversal_edges: { src: string; to: string; requires_card?: string }[];
+  // NOTE: like `slides`, these arrive with the raw JSON key names.
+  traversal_edges: {
+    id?: string;
+    from_space: string;
+    to_space: string;
+    item?: string;
+    description?: string;
+    /** Part of the board itself (the secret passage) rather than card-gated. */
+    built_in?: boolean;
+    direction?: "bidirectional" | "forward" | "backward";
+    requires_card?: string | null;
+  }[];
   start_space: string;
   escape_space: string;
   queens_house_space: string;

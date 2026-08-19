@@ -254,6 +254,11 @@ function updateStatus(root: HTMLElement, state: ClientState): void {
 
 function updateBoard(root: HTMLElement, ws: WsClient, state: ClientState): void {
   const container = root.querySelector<HTMLElement>("#board-wrap")!;
+  // On the Rack you get no turn and therefore no prompt, so nothing in the
+  // controls panel explains why play keeps going past you. The board itself
+  // says it: everything goes red until the sentence is served.
+  const me = state.game?.players.find((p) => p.username === state.you) ?? null;
+  container.classList.toggle("is-racked", me?.status === "RACKED");
   if (!state.board) {
     container.innerHTML = `<div class="board-placeholder">Loading board…</div>`;
     return;
@@ -275,7 +280,9 @@ function updateOpponents(root: HTMLElement, state: ClientState): void {
   if (!g) return;
   const curIdx  = g.current_turn_index;
   const curName = g.turn_order[curIdx] ?? null;
-  for (const p of g.players) {
+  // Listed in turn order, rotated so the player up next sits at the top —
+  // reading down the list tells you how many turns until your own.
+  for (const p of playersInTurnOrder(g)) {
     const li = document.createElement("li");
     if (!p.connected) li.classList.add("disconnected");
 
@@ -300,11 +307,51 @@ function updateOpponents(root: HTMLElement, state: ClientState): void {
     if (p.jewels.length) bits.push(`💎${p.jewels.length}`);
     if (p.has_coin) bits.push("💰");
     if (p.escaped) bits.push("ESCAPED");
-    if (p.status && p.status !== "normal") bits.push(p.status);
+    // Statuses arrive upper-case from the server, so the old lower-case
+    // comparison never matched and every player was badged "NORMAL".
+    const status = STATUS_BADGES[p.status];
+    if (status) bits.push(status);
+    if (p.miss_next_turn && !status) bits.push("misses a turn");
     info.textContent = bits.join(" ");
     li.appendChild(info);
     ul.appendChild(li);
   }
+}
+
+/** Short badge text per status. NORMAL is deliberately absent — it's the
+ *  default and badging it is pure noise. */
+const STATUS_BADGES: Record<string, string> = {
+  IMPRISONED: "imprisoned",
+  TORTURED: "questioned",
+  RACKED: "on the Rack",
+  HOSPITAL: "in hospital",
+};
+
+/**
+ * The players in play order, starting with whoever is up now.
+ *
+ * ``g.players`` is in join order, which says nothing about when you act.
+ * ``g.turn_order`` is the authoritative sequence (shuffled at ``start_game``),
+ * so we walk that and rotate it to the current index. Anyone in ``players`` but
+ * missing from ``turn_order`` — which shouldn't happen, but a stale snapshot
+ * could — is appended rather than dropped.
+ */
+function playersInTurnOrder(
+  g: import("../state.js").GameSnapshot,
+): import("../state.js").GamePlayer[] {
+  const byName = new Map(g.players.map((p) => [p.username, p]));
+  const order = g.turn_order ?? [];
+  const n = order.length;
+  const out: import("../state.js").GamePlayer[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = byName.get(order[(g.current_turn_index + i) % n]);
+    if (p) {
+      out.push(p);
+      byName.delete(p.username);
+    }
+  }
+  for (const p of g.players) if (byName.has(p.username)) out.push(p);
+  return out;
 }
 
 function updateDecks(root: HTMLElement, state: ClientState): void {
@@ -320,21 +367,27 @@ function updateDecks(root: HTMLElement, state: ClientState): void {
   const looseCount = Object.values(g.loose_jewels ?? {}).reduce((a, l) => a + l.length, 0);
   const tower = deckBucket(g.tower_draw_count, g.tower_discard_count);
   const raven = deckBucket(g.raven_draw_count, g.raven_discard_count);
+  const coinTotal = g.coins_total ?? g.coins_available;
   el.innerHTML = `
     <div>Tower: ${tower}</div>
     <div>Raven: ${raven}</div>
     <div>Jewels in the Tower: ${jewelsOut}${looseCount ? ` (+${looseCount} loose)` : ""}</div>
-    <div>Coins in Deveraux: ${g.coins_available}</div>
+    <div>Coins in Deveraux: ${g.coins_available} of ${coinTotal}</div>
   `;
 }
 
+/**
+ * How close a deck is to its reshuffle.
+ *
+ * The draw pile is spent before the discard pile is turned over, so the
+ * exact number of draws left until that happens is worth stating plainly —
+ * players plan around it.
+ */
 function deckBucket(draw: number, discard: number): string {
   if (draw === 0 && discard === 0) return "empty";
-  if (draw === 0) return `reshuffling soon (${discard} in discard)`;
-  if (draw <= 5)  return `~${draw} left`;
-  if (draw <= 15) return "running low";
-  if (draw <= 30) return "plenty";
-  return "full deck";
+  if (draw === 0) return `reshuffling on the next draw (${discard} in discard)`;
+  if (discard === 0) return `${draw} left`;
+  return `${draw} draw${draw === 1 ? "" : "s"} until reshuffle (${discard} in discard)`;
 }
 
 function updateChat(root: HTMLElement, state: ClientState): void {

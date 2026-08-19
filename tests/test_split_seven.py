@@ -11,7 +11,7 @@ from pathlib import Path
 
 from server.game.board import Board
 from server.game.rng import Rng
-from server.game.rules import _GLOBAL_RNG, apply
+from server.game.rules import _GLOBAL_RNG, RuleError, _split_movable_targets, apply
 from server.game.state import (
     GameState,
     PendingSplitSeven,
@@ -22,6 +22,20 @@ from server.game.state import (
 
 
 BOARD = Board.from_file(Path(__file__).resolve().parent.parent / "data" / "board.json")
+
+
+def _arm_split(game: GameState, roller: str = "alice") -> GameState:
+    """Fill in the movability map the roll handler would normally compute.
+
+    ``assign_split_seven`` refuses to hand steps to a player who has no legal
+    move of that size, so a hand-built ``PendingSplitSeven`` needs this.
+    """
+    split = game.turn.pending_split
+    assert split is not None
+    split.movable_targets = _split_movable_targets(
+        game, BOARD, game.player(roller), split.total,
+    )
+    return game
 
 
 def _make_split_state(alice_pos: str = "ww00_start", bob_pos: str = "ww05") -> GameState:
@@ -37,7 +51,7 @@ def _make_split_state(alice_pos: str = "ww00_start", bob_pos: str = "ww05") -> G
     )
     game.phase = Phase.SPLIT_SEVEN_ASSIGN
     game.turn = TurnContext(roll=[3, 4], pending_split=PendingSplitSeven(total=7))
-    return game
+    return _arm_split(game)
 
 
 def test_split_seven_moves_both_players_on_wall_walk():
@@ -78,6 +92,7 @@ def test_split_seven_target_leg_resumes_after_path_choice():
     )
     game.phase = Phase.SPLIT_SEVEN_ASSIGN
     game.turn = TurnContext(roll=[3, 4], pending_split=PendingSplitSeven(total=7))
+    _arm_split(game)
     rng = Rng(seed=1)
     _GLOBAL_RNG.set(rng)
 
@@ -140,6 +155,7 @@ def test_split_seven_roller_chooses_target_destination():
     )
     game.phase = Phase.SPLIT_SEVEN_ASSIGN
     game.turn = TurnContext(roll=[3, 4], pending_split=PendingSplitSeven(total=7))
+    _arm_split(game)
     rng = Rng(seed=1)
     _GLOBAL_RNG.set(rng)
 
@@ -190,3 +206,58 @@ def test_split_seven_all_to_self_no_target_needed():
     assert new.players[0].position == "ww07"
     assert new.players[1].position == "ww20"  # unchanged
     assert new.turn.pending_split is None
+
+
+def test_a_boxed_in_opponent_is_not_offered_as_a_split_target():
+    """An un-accredited piece on Queen's House is stuck: the wall walk is
+    forward-only and dead-ends there, so no leg size moves them anywhere."""
+    game = _make_split_state(bob_pos=BOARD.data.queens_house_space)
+    assert game.turn.pending_split is not None
+    assert game.turn.pending_split.movable_targets == {}
+
+    rng = Rng(seed=1)
+    _GLOBAL_RNG.set(rng)
+    try:
+        apply(
+            game, "assign_split_seven",
+            {"username": "alice", "n_self": 3, "n_other": 4, "target": "bob"},
+            board=BOARD, rng=rng,
+        )
+    except RuleError as exc:
+        assert "cannot be moved" in str(exc)
+    else:
+        raise AssertionError("expected the split to be refused")
+
+
+def test_rolling_a_seven_with_nobody_movable_skips_the_split():
+    """The roller takes the whole 7 rather than being asked to split it."""
+    game = GameState(
+        mode="fast",
+        players=[
+            PlayerState(username="alice", color="red", position="ww00_start"),
+            PlayerState(username="bob", color="blue",
+                        position=BOARD.data.queens_house_space),
+        ],
+        turn_order=["alice", "bob"],
+        current_turn_index=0,
+        seed=1,
+    )
+    game.phase = Phase.TURN_START
+    rng = _SevenRng()
+    _GLOBAL_RNG.set(rng)
+
+    game, events = apply(game, "roll_dice", {"username": "alice"}, board=BOARD, rng=rng)
+
+    kinds = [e["kind"] for e in events]
+    assert "split_unavailable" in kinds
+    assert "split_assign_required" not in kinds
+    assert game.phase != Phase.SPLIT_SEVEN_ASSIGN
+    assert game.player("alice").position == "ww07"
+
+
+class _SevenRng(Rng):
+    def __init__(self):
+        super().__init__(seed=1)
+
+    def roll_dice(self, n: int = 2) -> list[int]:
+        return [3, 4]

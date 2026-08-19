@@ -18,11 +18,22 @@
  * a time.
  */
 import type { WsClient } from "../net/ws.js";
-import type { Card, ClientState, GameSnapshot, RavenNotice } from "../state.js";
-import { ravenCardCopy, towerCardCopy } from "./card_descriptions.js";
+import type {
+  Card, ClientState, ConfinementNotice, GameSnapshot, RavenNotice,
+} from "../state.js";
+import { confinementCopy, ravenCardCopy, towerCardCopy } from "./card_descriptions.js";
 import {
-  ravenCardBack, ravenCardIcon, towerCardBack, towerCardIcon,
+  confinementIcon, ravenCardBack, ravenCardIcon, towerCardBack, towerCardIcon,
 } from "./card_art.js";
+
+/** A completed card trade, waiting to be shown to the player who made it. */
+interface TradeModal {
+  given: number;
+  /** Card ids drawn back. Resolved to names at render time — the event beats
+   *  the snapshot, so they aren't in our hand yet when this arrives. */
+  received: string[];
+  shortBy: number;
+}
 import { hideBoardTooltip } from "../board/render.js";
 
 interface TowerModal {
@@ -79,6 +90,9 @@ export function mountNotifications(
     renderModal();
   }
 
+  // ---- Card-trade result (the trader only) --------------------------------
+  let tradeModal: TradeModal | null = null;
+
   // ---- Toast queue --------------------------------------------------------
   let toastSeq = 0;
   const toasts: ToastSpec[] = [];
@@ -118,6 +132,24 @@ export function mountNotifications(
       modalSlot.appendChild(renderRavenModal(notice, ws, state.you));
       return;
     }
+    // Then the confinement banner — after the raven, so a raven card that put
+    // somebody away is read first and the sentence lands second.
+    const confinement = game?.active_confinement_notice ?? null;
+    if (confinement) {
+      opening();
+      modalSlot.appendChild(renderConfinementModal(confinement, ws, state.you));
+      return;
+    }
+    // A trade can hand back several cards at once, so it gets one modal listing
+    // them rather than a queue of single-card flips to click through.
+    if (tradeModal) {
+      opening();
+      const spec = tradeModal;
+      modalSlot.appendChild(renderTradeModal(
+        spec, state.game, () => { tradeModal = null; renderModal(); },
+      ));
+      return;
+    }
     // Then any queued tower modals (drawer-only).
     if (towerQueue.length > 0) {
       opening();
@@ -154,8 +186,51 @@ export function mountNotifications(
     }
   });
 
+  // "Change a card" hands you a fresh tower card without a tower_card_drawn
+  // event, so give it the same face-down-then-flip modal as any other draw.
+  ws.on("card_changed", (p: any) => {
+    if (p?.player === state.you && p?.drawn) pushTowerModal(String(p.drawn));
+  });
+
+  ws.on("cards_redrawn", (p: any) => {
+    const who = p?.player as string | undefined;
+    if (!who) return;
+    const givenCount = Number(p?.given_count ?? 0);
+    const received: string[] = Array.isArray(p?.received) ? p.received.map(String) : [];
+    if (who === state.you) {
+      tradeModal = {
+        given: givenCount,
+        received,
+        shortBy: Number(p?.short_by ?? 0),
+      };
+      renderModal();
+    } else {
+      // SECRET: what came back is the trader's business; the counts are public.
+      pushToast(
+        `${who} traded ${givenCount} card${givenCount === 1 ? "" : "s"} for ` +
+        `${received.length} — and stayed put.`,
+        "tower",
+      );
+    }
+  });
+
   ws.on("coin_picked_up", (p: any) => {
-    if (p?.player) pushToast(`${p.player} picked up the coin! 💰`, "good");
+    if (!p?.player) return;
+    const left = typeof p.remaining === "number" && typeof p.total === "number"
+      ? ` (${p.remaining} of ${p.total} left)`
+      : "";
+    pushToast(`${p.player} picked up a coin! 💰${left}`, "good");
+  });
+  ws.on("accreditation_retry", (p: any) => {
+    if (p?.player)
+      pushToast(`${p.player} rolled a double at Queen's House — another go.`, "info");
+  });
+  ws.on("split_unavailable", (p: any) => {
+    if (p?.player)
+      pushToast(`Nobody else can be moved — ${p.player} takes all ${p.total ?? 7}.`, "info");
+  });
+  ws.on("summons_declined", (p: any) => {
+    if (p?.player) pushToast(`${p.player} refused the summons — misses a turn.`, "bad");
   });
   ws.on("accredited", (p: any) => {
     if (!p?.player) return;
@@ -202,11 +277,15 @@ export function mountNotifications(
     const spoils: string[] = [];
     if (jewels) spoils.push(`${jewels} jewel${jewels === 1 ? "" : "s"}`);
     if (p.coin_taken) spoils.push("a coin");
+    // No "?" placeholders: a missing name drops the score line rather than
+    // printing punctuation at the player.
+    const score = p.attacker && p.defender
+      ? `${p.attacker} ${p.attacker_total ?? 0} vs ${p.defender} ${p.defender_total ?? 0} — `
+      : "";
     pushToast(
-      `${p.attacker ?? "?"} ${p.attacker_total ?? 0} vs ${p.defender ?? "?"} ${p.defender_total ?? 0}` +
-        ` — ${p.winner} wins!` +
+      `${score}${p.winner} wins!` +
         (spoils.length ? ` Takes ${spoils.join(" and ")} from ${p.loser}.` : "") +
-        ` ${p.loser} goes to the Hospital.`,
+        (p.loser ? ` ${p.loser} goes to the Hospital.` : ""),
       "good",
       TOAST_LONG_TTL,
     );
@@ -258,6 +337,15 @@ export function mountNotifications(
   ws.on("beauchamp_imprisonment", (p: any) => {
     if (p?.player) pushToast(`${p.player} imprisoned in Beauchamp Tower.`, "bad");
   });
+  ws.on("confined_on_landing", (p: any) => {
+    if (!p?.player) return;
+    const verb = p.status === "TORTURED" ? "hauled in for questioning at" : "locked up in";
+    pushToast(
+      `${p.player} walked into the ${p.label ?? "tower"} — ${verb} it for ${p.turns ?? 3} turns.`,
+      "bad",
+      TOAST_LONG_TTL,
+    );
+  });
   ws.on("rack_sender_triggered", (p: any) => {
     if (p?.player)
       pushToast(`${p.player} is dragged off to the Rack!`, "bad", TOAST_LONG_TTL);
@@ -296,7 +384,15 @@ export function mountNotifications(
     if (p?.player) pushToast(`${p.player} slipped past in disguise.`, "info");
   });
   ws.on("pardoned", (p: any) => {
-    if (p?.player) pushToast(`${p.player} pardoned (${p.pardon_kind ?? "?"}).`, "good");
+    if (!p?.player) return;
+    pushToast(
+      p.pardon_kind === "rack"
+        ? `${p.player} produced a Rack Pardon — released!`
+        : p.pardon_kind === "royal"
+          ? `${p.player} produced a Royal Pardon — released!`
+          : `${p.player} was pardoned — released!`,
+      "good",
+    );
   });
   ws.on("framed", (p: any) => {
     if (p?.framer && p?.framed)
@@ -316,9 +412,18 @@ export function mountNotifications(
         "bad",
       );
   });
+  // A swap deals a card to *both* sides: the swapper takes a random one from
+  // the opponent, the opponent keeps the card they were handed. Either way the
+  // card is new to you, so it gets the same face-down-then-flip reveal as a
+  // draw. Everyone else just gets the toast.
   ws.on("card_swapped", (p: any) => {
-    if (p?.player && p?.target)
+    if (p?.player === state.you) {
+      if (p.received) pushTowerModal(String(p.received));
+    } else if (p?.target === state.you) {
+      if (p.given) pushTowerModal(String(p.given));
+    } else if (p?.player && p?.target) {
       pushToast(`${p.player} swapped a card with ${p.target}.`, "info");
+    }
   });
   ws.on("sent_to_space", (p: any) => {
     if (!p?.player) return;
@@ -337,8 +442,9 @@ export function mountNotifications(
   // no handler for. Without a toast an unimplemented action looks exactly like
   // a square that does nothing, which is how several gaps went unnoticed.
   ws.on("unhandled_space_action", (p: any) => {
+    const which = p?.key ? `"${p.key}"` : "an action";
     pushToast(
-      `Unimplemented space action "${p?.key ?? "?"}" on ${p?.space ?? "?"}.`,
+      `Unimplemented space action: ${which}` + (p?.space ? ` on ${p.space}` : "") + `.`,
       "bad",
       TOAST_LONG_TTL,
     );
@@ -406,7 +512,7 @@ function flipCard(
  * any explanatory text. Shared by both flavours so they stay in step.
  */
 function cardFace(opts: {
-  flavor: "tower" | "raven";
+  flavor: "tower" | "raven" | "prison";
   title: string;
   icon: string;
   value?: string | null;
@@ -513,6 +619,102 @@ function renderRavenModal(
       // Silently swallow — the snapshot will reflect reality regardless.
     });
   });
+  return wrap;
+}
+
+/**
+ * The red banner. Public like a raven notice, but dismissable only by the
+ * player it happened to — the rest of the table watches it land.
+ */
+function renderConfinementModal(
+  notice: ConfinementNotice,
+  ws: WsClient,
+  you: string | null,
+): HTMLElement {
+  const isVictim = you === notice.username;
+  const copy = confinementCopy(notice.status, {
+    turns: notice.turns,
+    cause: notice.cause,
+    you: isVictim,
+    username: notice.username,
+  });
+  const wrap = document.createElement("div");
+  wrap.className = "notif-modal-backdrop";
+  // No flip: this isn't a card being turned over, it's a door closing.
+  const foot = isVictim
+    ? `<div class="notif-modal-foot">
+         <button class="notif-dismiss" data-action="dismiss">Accept your fate</button>
+         <span class="notif-modal-hint">Only you can clear this.</span>
+       </div>`
+    : `<div class="notif-modal-foot">
+         <span class="notif-modal-hint" style="text-align:left">
+           Waiting for ${escapeHtml(notice.username)} to take it in…
+         </span>
+       </div>`;
+  wrap.innerHTML = `
+    <div class="notif-modal notif-modal-prison" role="dialog" aria-modal="true">
+      <div class="notif-modal-header">Locked up</div>
+      ${cardFace({
+        flavor: "prison",
+        title: copy.title,
+        icon: confinementIcon(notice.status),
+        description: copy.description,
+        meta: isVictim ? undefined : `${notice.username} is going nowhere`,
+      })}
+      ${foot}
+    </div>
+  `;
+  wrap.querySelector<HTMLButtonElement>('[data-action="dismiss"]')?.addEventListener("click", () => {
+    ws.send("dismiss_confinement_notice", { username: you }).catch(() => {});
+  });
+  return wrap;
+}
+
+/**
+ * What a card trade brought back, all in one modal.
+ *
+ * No flip animation here: with several cards at once a per-card reveal would be
+ * a chore, and the interesting information is the set, not the suspense.
+ */
+function renderTradeModal(
+  spec: TradeModal,
+  game: GameSnapshot | null,
+  onDismiss: () => void,
+): HTMLElement {
+  const cards = spec.received.map((id) => ({ id, card: cardFromId(game, id) }));
+  const wrap = document.createElement("div");
+  wrap.className = "notif-modal-backdrop";
+  const tiles = cards
+    .map(({ id, card }) => {
+      const name = card?.name ?? slugToName(id);
+      return `<div class="card-tile" style="cursor:default">` +
+        (card?.value ? `<span class="card-tile-value">${card.value}</span>` : "") +
+        `<span class="card-tile-art">${towerCardIcon(name, 40)}</span>` +
+        `<span class="card-tile-name">${escapeHtml(name)}</span>` +
+        `</div>`;
+    })
+    .join("");
+  const shortNote = spec.shortBy
+    ? `<p class="notif-card-body">The tower deck ran dry — you're ` +
+      `${spec.shortBy} card${spec.shortBy === 1 ? "" : "s"} short.</p>`
+    : "";
+  wrap.innerHTML = `
+    <div class="notif-modal notif-modal-tower" role="dialog" aria-modal="true">
+      <div class="notif-modal-header">Cards traded</div>
+      <p class="notif-card-body">
+        You handed in ${spec.given} and drew ${cards.length} back.
+      </p>
+      ${cards.length
+        ? `<div class="card-tile-grid" style="margin-top:0.8rem">${tiles}</div>`
+        : `<p class="notif-card-body">Nothing came back.</p>`}
+      ${shortNote}
+      <div class="notif-modal-foot">
+        <button class="notif-dismiss" data-action="dismiss">Right then</button>
+        <span class="notif-modal-hint"></span>
+      </div>
+    </div>
+  `;
+  wrap.querySelector<HTMLButtonElement>('[data-action="dismiss"]')?.addEventListener("click", onDismiss);
   return wrap;
 }
 

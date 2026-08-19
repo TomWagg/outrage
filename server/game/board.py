@@ -30,6 +30,26 @@ class Board:
             self._neighbors.setdefault(sl.src, set()).add(sl.to)
             if sl.bidirectional:
                 self._neighbors.setdefault(sl.to, set()).add(sl.src)
+        # Built-in traversal edges (the Chapel Royal ↔ Salt Tower secret
+        # passage) are part of the board itself, so they belong in the plain
+        # neighbour graph. Card-gated edges (rope, ladder) deliberately are
+        # not: whether they exist depends on the mover's hand, which the board
+        # knows nothing about.
+        for te in data.traversal_edges:
+            if not te.built_in or te.requires_card:
+                continue
+            if te.movement_cost != 1:
+                # The movement search is unweighted; a multi-step edge would
+                # silently count as one. Better to leave it out and be loud.
+                log.warning(
+                    "Traversal edge %s has movement_cost=%s; only cost-1 edges "
+                    "are supported, skipping", te.id or f"{te.src}->{te.to}", te.movement_cost,
+                )
+                continue
+            if te.direction in ("bidirectional", "forward"):
+                self._neighbors.setdefault(te.src, set()).add(te.to)
+            if te.direction in ("bidirectional", "backward"):
+                self._neighbors.setdefault(te.to, set()).add(te.src)
         # Wall-walk order cycle.
         walk = [s for s in data.spaces if s.region == "wall_walk" and s.wall_walk_order is not None]
         walk.sort(key=lambda s: s.wall_walk_order or 0)
