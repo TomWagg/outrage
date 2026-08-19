@@ -54,7 +54,7 @@ from .state import (
 log = logging.getLogger(__name__)
 
 # Fallback coin cap for states built without ``start_game`` (unit tests, mostly).
-# A live game overwrites ``coins_total`` with ``len(players) + 1``.
+# A live game overwrites ``coins_total`` with ``len(players)``.
 MAX_COINS = 5
 # Initial hand sizes by player count.
 DEAL_2_4 = 6
@@ -289,9 +289,8 @@ def _intent_start_game(state, payload, *, board, rng):
                 break
             p.add_card(state.tower_draw.pop())
         p.position = board.data.start_space
-    # One coin more than there are players: somebody always has to fight for
-    # the last one.
-    state.coins_total = len(state.players) + 1
+    # Same number of coins as there are players: everybody gets one.
+    state.coins_total = len(state.players)
     state.coins_available = state.coins_total
     # Initialise warders and jewels if not already.
     if not state.warders:

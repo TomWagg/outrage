@@ -99,8 +99,8 @@ def test_the_coin_pile_is_one_bigger_than_the_table():
 
     state, _ = apply(state, "start_game", {}, board=BOARD, rng=rng)
 
-    assert state.coins_total == 4
-    assert state.coins_available == 4
+    assert state.coins_total == 3
+    assert state.coins_available == 3
 
 
 def test_a_forfeited_coin_goes_back_on_the_pile_but_never_overfills_it():
