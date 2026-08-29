@@ -92,15 +92,9 @@ class SpaceData(BaseModel):
     coords_region: Optional[CoordRegion] = None
     neighbors: list[str] = Field(default_factory=list)
     wall_walk_order: Optional[int] = None
-    white_tower_order: Optional[int] = None
-    jewel_id: Optional[JewelId] = None
-    warder_post_id: Optional[WarderPostId] = None
     # If True, raven cards / other "send player here" effects cannot force a
     # player onto this space (e.g. White Tower pink path cells).
     immune_to_forced_moves: bool = False
-    # True for circled inner-ward cells that are walkable but do NOT trigger a
-    # raven-card draw on landing.
-    non_raven: bool = False
     action: Optional[SpaceAction] = None
 
 
@@ -117,10 +111,12 @@ class SlideData(BaseModel):
 
 
 class WarderPostData(BaseModel):
+    """A named post. A warder standing on ``space_id`` makes that square
+    impassable to anyone without a Disguise."""
+
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
     id: WarderPostId
     space_id: str
-    blocks: list[str] = Field(default_factory=list, alias="blocks_space_ids")
 
 
 class InitialWarder(BaseModel):
@@ -137,7 +133,6 @@ class DisplayRegion(BaseModel):
     id: str
     label: str = ""
     coords_region: CoordRegion
-    purpose: str = ""
 
 
 class TraversalEdge(BaseModel):
@@ -148,17 +143,16 @@ class TraversalEdge(BaseModel):
     id: Optional[str] = None
     src: str = Field(alias="from_space")
     to: str = Field(alias="to_space")
-    item: Optional[str] = None  # "rope", "ladder", "secret_passage", ...
-    consumes_card: bool = True
+    item: Optional[str] = None  # "rope", "ladder", "secret_passage", ... — drives the board art
     built_in: bool = False
     direction: Literal["bidirectional", "forward", "backward"] = "bidirectional"
-    # If set, the player must hold a card of this kind to traverse. The card
-    # is kept in hand unless ``consumes_card`` is also true.
+    # If set, the player must hold a card of this kind to traverse, and the
+    # edge is kept out of the plain neighbour graph so it can't be walked free.
     requires_card: Optional[str] = None
-    # Number of movement-points the traversal costs (default 1, same as a
-    # normal neighbour edge).
+    # Number of movement-points the traversal costs. The movement search is
+    # unweighted, so :class:`~server.game.board.Board` skips anything but 1 and
+    # says so.
     movement_cost: int = 1
-    notes: Optional[str] = None
 
 
 class JewelDisplayOffset(BaseModel):
@@ -170,11 +164,29 @@ class JewelDisplayOffset(BaseModel):
 
 
 class BoardRules(BaseModel):
+    """Board-level switches the engine actually consults.
+
+    ``extra="allow"`` keeps free-form annotations in the JSON from failing
+    validation — but an unknown key is inert, so anything meant to change how
+    the game plays has to be declared here *and* read somewhere.
+    """
+
     model_config = ConfigDict(extra="allow")
-    white_tower_forward_only: bool = True
+    #: The White Tower is walked out of under your own steam or not at all.
     white_tower_immune_to_forced_moves: bool = True
-    escape_banks_jewel_returns_coin_redraws_hand: bool = True
+    #: An escapee's surrendered hand goes back into the draw pile (else discard).
     escape_reshuffles_old_hand_into_deck: bool = True
+    #: Space kinds that deal a tower card on landing, less the exceptions.
+    tower_card_draw_kinds: list[str] = Field(default_factory=lambda: ["tower"])
+    tower_card_draw_exception_space_ids: list[str] = Field(default_factory=list)
+    #: Space kind -> the ``Status`` walking onto it imposes.
+    confine_on_landing_kinds: dict[str, str] = Field(default_factory=dict)
+    #: How many turns a confinement lasts.
+    confinement_turns: int = 3
+    #: Landing on the Devereux Tower hands out a coin.
+    devereux_grants_coin: bool = True
+    #: Space kinds that simply cost you your next turn.
+    miss_turn_on_landing_kinds: list[str] = Field(default_factory=list)
 
 
 class BoardData(BaseModel):
@@ -190,9 +202,9 @@ class BoardData(BaseModel):
     jewel_display_offset: Optional[JewelDisplayOffset] = None
     rules: BoardRules = Field(default_factory=BoardRules)
 
-    # Anchor spaces. Most are required to start a real game, but the toy
-    # board used in tests may omit several — so they are all Optional and the
-    # engine validates presence at game-start time for the pieces it needs.
+    # Anchor spaces. A real game needs most of them, but the toy boards used in
+    # tests omit several, so they are all Optional. Nothing validates them up
+    # front: a missing anchor surfaces when the rule that wants it runs.
     start_space: Optional[str] = None
     escape_space: Optional[str] = None
     queens_house_space: Optional[str] = None
@@ -213,7 +225,6 @@ class BoardData(BaseModel):
     shop_space: Optional[str] = None
     barracks_space: Optional[str] = None
     raven_deck_space: Optional[str] = None
-    raven_deck_display_region_id: Optional[str] = None
 
     metallicity_destination_ids: list[str] = Field(default_factory=list)
     bench_space_ids: list[str] = Field(default_factory=list)

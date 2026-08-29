@@ -82,8 +82,7 @@ def compute_destinations(
     along the route so the client can "stop at" them explicitly.
 
     ``visited_this_turn`` supplies the squares the player has already stood on
-    this turn — under ``rules.no_revisit_during_turn`` those cannot be re-entered
-    by any path of this move.
+    this turn; no path of this move may re-enter one.
 
     ``allow_combat_stops=False`` drops those truncated entries: the move must
     be walked in full. Split-7 legs use this. There the step count is chosen
@@ -207,36 +206,3 @@ def compute_destinations(
         and (forward_only or (len(destinations) == 1))
     )
     return MoveOptions(destinations, intermediate_enemies, forced_single, requires_disguise)
-
-
-def split_movement(
-    board: Board,
-    from_space: str,
-    total_steps: int,
-    split_first: int,
-    player: PlayerState,
-    warder_blocking_spaces: Optional[Iterable[str]] = None,
-    other_player_positions: Optional[Iterable[str]] = None,
-    visited_this_turn: Optional[Iterable[str]] = None,
-    allow_combat_stops: bool = True,
-) -> tuple[MoveOptions, int]:
-    """Helper for split-7-style segmented movement.
-
-    Returns ``(first_segment_options, remaining_steps)``. The caller resolves
-    the first segment (with landing effects) and then invokes
-    ``compute_destinations`` again from the new position with
-    ``remaining_steps`` for the second segment.
-    """
-    if split_first < 0 or split_first > total_steps:
-        raise ValueError("split_first out of range")
-    opts = compute_destinations(
-        board,
-        from_space,
-        split_first,
-        player,
-        warder_blocking_spaces=warder_blocking_spaces,
-        other_player_positions=other_player_positions,
-        visited_this_turn=visited_this_turn,
-        allow_combat_stops=allow_combat_stops,
-    )
-    return opts, total_steps - split_first

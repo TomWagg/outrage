@@ -75,28 +75,28 @@ def test_a_summons_is_obeyed_only_when_accepted():
 
     # Revealing a Summons asks the question rather than moving the piece.
     assert "raven_needs_input" in [e["kind"] for e in evs]
-    assert player.position == RAVEN_SPACE
+    assert state.player("p1").position == RAVEN_SPACE
 
     state, _ = apply(state, "resolve_raven_effect",
                      {"username": "p1", "params": {"accept": True}},
                      board=BOARD, rng=Rng(seed=5))
-    assert player.position == BOARD.data.museum_space
+    assert state.player("p1").position == BOARD.data.museum_space
     assert state.turn.pending_raven is None
 
 
 def test_a_summons_can_be_refused_at_the_cost_of_a_turn():
     state, player = make_state()
     _resolve_landing(state, BOARD, player)
-    apply(state, "reveal_raven_notice", {"username": "p1"},
-          board=BOARD, rng=Rng(seed=5))
+    state, _ = apply(state, "reveal_raven_notice", {"username": "p1"},
+                     board=BOARD, rng=Rng(seed=5))
 
     state, evs = apply(state, "resolve_raven_effect",
                        {"username": "p1", "params": {"decline": True}},
                        board=BOARD, rng=Rng(seed=5))
 
     assert "summons_declined" in [e["kind"] for e in evs]
-    assert player.position == RAVEN_SPACE
-    assert player.miss_next_turn is True
+    assert state.player("p1").position == RAVEN_SPACE
+    assert state.player("p1").miss_next_turn is True
     assert state.turn.pending_raven is None
 
 
@@ -156,8 +156,8 @@ def test_the_summons_only_reaches_a_tower():
                              effect_key="go_to_location",
                              params={"location": "player_choice"})]
     _resolve_landing(state, BOARD, player)
-    apply(state, "reveal_raven_notice", {"username": "p1"},
-          board=BOARD, rng=Rng(seed=5))
+    state, _ = apply(state, "reveal_raven_notice", {"username": "p1"},
+                     board=BOARD, rng=Rng(seed=5))
     start = state.players[0].position
 
     state, evs = apply(state, "resolve_raven_effect",

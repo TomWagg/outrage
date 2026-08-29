@@ -76,8 +76,8 @@ def test_three_doubles_on_trial_still_lands_you_in_the_bloody_tower():
         state, evs = apply(state, "roll_dice", {"username": "p1"}, board=BOARD, rng=rng)
 
     assert "three_doubles_bloody_tower" in [e["kind"] for e in evs]
-    assert player.position == BOARD.data.bloody_tower_space
-    assert player.status == Status.IMPRISONED
+    assert state.player("p1").position == BOARD.data.bloody_tower_space
+    assert state.player("p1").status == Status.IMPRISONED
 
 
 def test_the_coin_pile_is_one_bigger_than_the_table():

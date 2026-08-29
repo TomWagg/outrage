@@ -30,7 +30,20 @@ function closeTrade(): void {
   tradePicked.clear();
 }
 
-export function renderControlsPanel(root: HTMLElement): { update: (state: ClientState, ws: WsClient) => void } {
+/**
+ * Things the panel has to know that aren't in the game state: what the rest of
+ * the UI is still busy showing. The server has already resolved the turn by the
+ * time a snapshot lands, so without this the panel would give away a dice roll
+ * still tumbling and a raven card still face-down.
+ */
+export interface ControlsUiState {
+  /** The dice are mid-animation; the roll's consequences aren't public yet. */
+  diceRolling?: boolean;
+}
+
+export function renderControlsPanel(root: HTMLElement): {
+  update: (state: ClientState, ws: WsClient, ui?: ControlsUiState) => void;
+} {
   root.innerHTML = `
     <div class="panel" id="controls-panel">
       <h3>Turn</h3>
@@ -41,7 +54,7 @@ export function renderControlsPanel(root: HTMLElement): { update: (state: Client
     </div>
   `;
   return {
-    update: (state, ws) => updateControls(root, state, ws),
+    update: (state, ws, ui) => updateControls(root, state, ws, ui ?? {}),
   };
 }
 
@@ -78,7 +91,12 @@ function renderNewGameButton(root: HTMLElement, you: string | null, ws: WsClient
   slot.appendChild(ask);
 }
 
-function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): void {
+function updateControls(
+  root: HTMLElement,
+  state: ClientState,
+  ws: WsClient,
+  ui: ControlsUiState,
+): void {
   const info = root.querySelector<HTMLElement>("#turn-info")!;
   const row = root.querySelector<HTMLElement>("#controls-row")!;
   const pending = root.querySelector<HTMLElement>("#pending-info")!;
@@ -112,10 +130,14 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     tradeTurnKey = turnKey;
   }
 
+  // The roll is printed here as well as shown on the dice, so it has to keep
+  // the same secret: while the animation is running this line would simply
+  // announce the number the dice are still pretending to decide.
+  const showRoll = g.turn.roll.length > 0 && !ui.diceRolling;
   info.innerHTML = `
     <div>Phase: <strong>${g.phase}</strong></div>
     <div>Turn: <strong>${cur ?? "—"}</strong>${isMyTurn ? " (you)" : ""}</div>
-    ${g.turn.roll.length ? `<div>Last roll: ${g.turn.roll.join(" + ")} = ${g.turn.roll.reduce((a, b) => a + b, 0)}</div>` : ""}
+    ${showRoll ? `<div>Last roll: ${g.turn.roll.join(" + ")} = ${g.turn.roll.reduce((a, b) => a + b, 0)}</div>` : ""}
   `;
 
   if (g.phase === "GAME_OVER") {
@@ -172,8 +194,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   // except inside the White Tower, where combat is forbidden.
   if (me && ["TURN_START", "PRE_ROLL", "TURN_END"].includes(g.phase)) {
     // Mirrors ``can_fight`` on the server: not in the White Tower, both sides
-    // signed in, and something to fight with. Offering the button without all
-    // three only produced a rejected intent.
+    // signed in, and something to fight with.
     const mySpace = state.board?.spaces.find((s) => s.id === me.position);
     const canFightAtAll =
       mySpace?.region !== "white_tower" &&
@@ -192,15 +213,14 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   // Phase-specific action set (we only surface what the engine allows now).
   switch (g.phase) {
     case "TURN_START":
-    case "PRE_ROLL":
-    case "ACCREDITATION_ATTEMPT": {
+    case "PRE_ROLL": {
       // Sitting out this turn: there's nothing to roll for, so don't offer a
       // roll. A Tower Pass can still buy an extra turn, hence the card buttons
       // below stay.
       const missing = !!me?.miss_next_turn;
       // On trial at Queen's House: this roll decides accreditation, so say so
-      // and label the button for it. Driven off the player flag rather than a
-      // phase — Phase.ACCREDITATION_ATTEMPT is never actually assigned.
+      // and label the button for it. Driven off the player's own
+      // ``trying_accreditation`` flag; there is no separate phase for it.
       const onTrial = !missing && !!me?.trying_accreditation && !me?.accredited;
       if (missing) {
         const why = document.createElement("div");
@@ -253,16 +273,25 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           () => {
             if (tradeOpen) closeTrade();
             else { tradeOpen = true; tradePicked.clear(); }
-            updateControls(root, state, ws);
+            updateControls(root, state, ws, ui);
           },
         ));
       }
-      if (tradeOpen && me) renderTradePicker(pending, me, you, state, ws, root);
+      if (tradeOpen && me) renderTradePicker(pending, me, you, state, ws, root, ui);
       renderPreRollCardButtons(pending, g, me, you, state, ws);
       break;
     }
 
     case "CHOOSING_PATH": {
+      // The server resolves the roll and the move options in one go, so the
+      // snapshot arrives while the dice are still tumbling. Showing the
+      // destinations now would spell out the roll before it lands. The board
+      // holds its highlights back for the same reason; ``game.ts`` calls us
+      // again the moment the animation settles.
+      if (ui.diceRolling) {
+        pending.textContent = "Rolling…";
+        break;
+      }
       const pm = g.turn.pending_move;
       const dests = pm?.destinations ?? {};
       const keys = Object.keys(dests);
@@ -336,6 +365,11 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     }
 
     case "SPLIT_SEVEN_ASSIGN": {
+      // Names the roll total, so it waits for the dice as well.
+      if (ui.diceRolling) {
+        pending.textContent = "Rolling…";
+        break;
+      }
       renderSplitSeven(pending, row, g, you, ws);
       break;
     }
@@ -389,10 +423,9 @@ function renderJewelAttempt(
 }
 
 /**
- * A destination as a player would name it.
- *
- * These buttons showed the raw space id — "iw_8_11" — which is a database key,
- * not a place. Falls back to the id only if the board hasn't loaded yet.
+ * A destination as a player would name it — never the raw space id
+ * ("iw_8_11" is a database key, not a place). Falls back to the id only if the
+ * board hasn't loaded yet.
  */
 function named(state: ClientState, spaceId: string): string {
   return state.board ? (spaceLabel(state.board, spaceId) || spaceId) : spaceId;
@@ -496,6 +529,7 @@ function renderTradePicker(
   state: ClientState,
   ws: WsClient,
   root: HTMLElement,
+  ui: ControlsUiState,
 ): void {
   const hand = me.hand ?? [];
   // Cards may have left the hand since the last click (a swap, a fight).
@@ -537,7 +571,7 @@ function renderTradePicker(
     tile.addEventListener("click", () => {
       if (tradePicked.has(c.id)) tradePicked.delete(c.id);
       else tradePicked.add(c.id);
-      updateControls(root, state, ws);
+      updateControls(root, state, ws, ui);
     });
     grid.appendChild(tile);
   }
@@ -704,6 +738,17 @@ function renderRavenEffect(
     pending.textContent = "Raven effect pending…";
     return;
   }
+  // The card is dealt face-down and only the drawer may turn it over, so until
+  // they do, nothing here may name the effect — not the summons it is, not even
+  // its effect key. The reveal happens in the notification modal; this panel
+  // says only that the table is waiting on it.
+  const notice = g.active_raven_notice;
+  if (notice && !notice.revealed) {
+    pending.textContent = pr.drawer === you
+      ? "You've drawn a raven card — turn it over to see what it says."
+      : `${pr.drawer} has drawn a raven card, still face-down.`;
+    return;
+  }
   if (pr.drawer !== you) {
     pending.textContent = `Waiting for ${pr.drawer} to resolve the raven effect.`;
     return;
@@ -722,8 +767,7 @@ function renderRavenEffect(
         `<div style="margin-top:0.25rem">Obey it, or refuse and miss your next turn.</div>`;
       if (anywhere) {
         // "Any tower you like" means a tower — the squares that deal you a
-        // tower card — not any square on the board, which is what the old
-        // dropdown offered (and the server used to accept).
+        // tower card — not any square on the board.
         const towers = towerSpaces(state);
         if (towers.length === 0) {
           pending.innerHTML += `<div style="margin-top:0.25rem">No tower to go to.</div>`;
@@ -829,8 +873,7 @@ function renderRavenEffect(
 
     case "stopped_and_searched": {
       // Match on effect_key, not the printed name: the server spends the card
-      // by effect, so a rename would have left this offering a button the
-      // server then refused.
+      // by effect, so a rename must not desync the two.
       const me = g.players.find((p) => p.username === you);
       const hasDisguise = !!me?.hand.some((c) => c.effect_key === "disguise");
       pending.innerHTML = `
@@ -887,8 +930,8 @@ function labelFor(state: ClientState, spaceId: string): string {
 // Pre-roll card play
 // ---------------------------------------------------------------------------
 //
-// The engine accepts ``play_card_pre_roll`` in TURN_START / PRE_ROLL /
-// ACCREDITATION_ATTEMPT for tower cards whose category isn't weapon/burglary.
+// The engine accepts ``play_card_pre_roll`` in TURN_START / PRE_ROLL for tower
+// cards whose category isn't weapon/burglary.
 // Param shapes (see ``server/game/cards_effects.py``):
 //   tower_pass        -> { mode: "accredit" | "extra_turn" }
 //   sanctuary         -> {}
@@ -904,8 +947,7 @@ const PRE_ROLL_PLAYABLE_EFFECTS = new Set([
   "firecrackers",
   "lasso",
   "binary_disruption",
-  // Escape hatches. These were missing entirely, so a locked-up player holding
-  // a Pardon or a Confession had no way to play it.
+  // Escape hatches for a locked-up player.
   "royal_pardon",
   "rack_pardon",
   "traversal_beauchamp_escape",
@@ -1008,8 +1050,7 @@ function renderPreRollCardButtons(
         label.textContent = `${card.name}:`;
         label.style.fontSize = "0.85rem";
         wrap.appendChild(label);
-        // Nothing to buy if the clerks have already signed you in — the
-        // button used to be offered anyway and burned the card for nothing.
+        // Nothing to buy if the clerks have already signed you in.
         if (atQueens && !me.accredited) {
           wrap.appendChild(button("Accredit", () => send({ mode: "accredit" })));
         }

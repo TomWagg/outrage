@@ -156,7 +156,14 @@ export function renderGameLayout(
   chatSend.addEventListener("click", sendChat);
   chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
 
-  // ---- roll-key tracking (unchanged from before) ----------------------------
+  // ---- roll-key tracking -----------------------------------------------------
+  //
+  // The server resolves a roll and everything that follows from it in a single
+  // intent, so one snapshot carries both the dice and their consequences. The
+  // dice are then animated for the best part of a second — and for that second
+  // the board and the controls panel must not give the number away by lighting
+  // up the squares it reaches. Both are held back until the animation settles,
+  // at which point the dice display calls us again.
   let prevRollKey = "";
 
   const doUpdate = () => {
@@ -167,11 +174,15 @@ export function renderGameLayout(
       const newRoll = rollKey !== prevRollKey && roll.length === 2;
       if (newRoll) prevRollKey = rollKey;
 
-      if (!dice.animating && !newRoll) {
+      // ``newRoll`` covers this pass, during which dice.roll hasn't started yet;
+      // ``dice.animating`` covers every re-render until it finishes.
+      const diceRolling = newRoll || dice.animating;
+
+      if (!diceRolling) {
         updateBoard(root, ws, state);
       }
 
-      controls.update(state, ws);
+      controls.update(state, ws, { diceRolling });
       hand.update(state);
       updateOpponents(root, state);
       updateDecks(root, state);
@@ -183,6 +194,7 @@ export function renderGameLayout(
       if (newRoll) {
         dice.roll(roll[0], roll[1], () => {
           updateBoard(root, ws, state);
+          controls.update(state, ws, { diceRolling: false });
         });
       }
   };

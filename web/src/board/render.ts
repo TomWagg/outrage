@@ -919,10 +919,10 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         pieceLayer.appendChild(c);
 
         if (startX !== targetX || startY !== targetY) {
-          // Keep lastPieceCoords at the START for now.  animatePiece will
-          // update it to the current interpolated position each rAF frame so
-          // that any re-render that fires mid-tween starts from wherever the
-          // piece currently is rather than teleporting to the destination.
+          // Seed lastPieceCoords with the START point; animatePiece updates
+          // it to the current interpolated position each rAF frame, so a
+          // re-render mid-tween resumes from where the piece actually is
+          // rather than teleporting to the destination.
           lastPieceCoords.set(p.username, { x: startX, y: startY });
           animatePiece(c, p.username, startX, startY, targetX, targetY, MOVE_ANIM_MS);
         } else {
@@ -930,7 +930,7 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         }
       });
     }
-    // Prune history for players no longer on the board (removed mid-game).
+    // Prune tween history for names no longer in the game.
     const living = new Set(game.players.map((p) => p.username));
     for (const name of [...lastPieceCoords.keys()]) {
       if (!living.has(name)) lastPieceCoords.delete(name);

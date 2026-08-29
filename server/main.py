@@ -87,11 +87,19 @@ def _update_stats_from_events(state: AppState, events: list[dict]) -> None:
         elif kind == "dice_rolled":
             username = p.get("player")
             if username:
-                s = state.stats.get(username)
                 roll = p.get("roll", [])
-                s.total_dice_rolls += sum(roll)
                 if len(roll) == 2 and roll[0] == roll[1]:
-                    s.doubles_rolled += 1
+                    state.stats.get(username).doubles_rolled += 1
+
+        elif kind == "player_moved":
+            # Squares walked, which is not the same as pips rolled: a teleport
+            # carries no path at all, and a split 7 hands part of the roll to
+            # somebody else. Counted the same way ``GameStats.steps_taken`` is,
+            # so the lifetime tally and the end-of-game one agree.
+            username = p.get("player")
+            path = p.get("path") or []
+            if username and len(path) > 1:
+                state.stats.get(username).total_steps_taken += len(path) - 1
 
         elif kind == "tower_card_drawn":
             username = p.get("player")
@@ -127,9 +135,7 @@ def _update_stats_from_events(state: AppState, events: list[dict]) -> None:
                 state.stats.get(username).wins += 1
 
         elif kind == "slow_game_over":
-            # One win per game, credited to whoever the engine declared. This
-            # used to also fire per-escape, so a slow game could pay out more
-            # wins than it had players.
+            # Exactly one win per game, credited to whoever the engine declared.
             winner = p.get("winner")
             if winner:
                 state.stats.get(winner).wins += 1
@@ -409,11 +415,8 @@ async def _handle_game_intent(
     await send_to(conn, Ack(request_id=request_id))
     await _broadcast_events(state, events)
     await _broadcast_game_snapshots(state)
-
-    # Auto-wrap game-over: when the rule engine flips phase to GAME_OVER we
-    # push a single final lobby update so clients can drop back to the lobby
-    # if they want. We don't tear the game down automatically (so players can
-    # review the final state); a ``reset_lobby`` intent will.
+    # A game that reaches GAME_OVER is left standing so players can review the
+    # final state; ``reset_lobby`` is what tears it down.
 
 
 # ============================================================================
@@ -421,10 +424,12 @@ async def _handle_game_intent(
 # ============================================================================
 
 
+#: Lobby handlers, all called as ``(state, conn, payload, request_id)``. ``chat``
+#: is deliberately absent — it takes no request_id and is routed ahead of this
+#: table in :func:`ws_endpoint`.
 LOBBY_INTENTS = {
     "join": _handle_join,
     "set_mode": _handle_set_mode,
-    "chat": _handle_chat,
     "start_game": _handle_start_game,
     "reset_lobby": _handle_reset_lobby,
 }

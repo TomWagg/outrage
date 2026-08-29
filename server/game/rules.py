@@ -5,11 +5,10 @@ an ``Intent`` — a ``(name, payload)`` pair. :func:`apply` validates the intent
 against the current :class:`GameState` and either returns
 ``(new_state, events)`` or raises :class:`RuleError`.
 
-State is mutated **in place** and the same object is returned as ``new_state``.
-Handlers are written to validate before mutating, but a mid-handler exception
-will leave the state partially changed. The caller (:mod:`server.main`) only
-replaces ``AppState.game`` on success, so a :class:`RuleError` leaves the
-live game untouched.
+Handlers mutate state in place, so :func:`apply` runs them against a deep copy
+and returns that copy as ``new_state``. A handler that raises part-way through
+therefore discards its half-finished mutations along with the copy, and the
+caller's :class:`GameState` is untouched by any intent it rejected.
 
 ``events`` is a plain list of dicts ``{"kind": ..., "payload": {...}}``.
 :mod:`server.main` broadcasts these to all clients as individual ``Event``
@@ -28,7 +27,7 @@ from .board import Board
 from .cards import Card, Deck
 from .cards_effects import EffectError, dispatch as dispatch_effect
 from . import combat as combat_mod
-from .movement import compute_destinations, split_movement
+from .movement import compute_destinations
 from .rng import Rng
 from .state import (
     CONFINED_STATUSES,
@@ -162,9 +161,9 @@ def immune_to_forced_moves(board: "Board", player: PlayerState) -> bool:
     Two sources: the square itself (``immune_to_forced_moves`` in the board
     file) and the White Tower as a whole, which you walk out of under your own
     steam or not at all. A split 7, a Lasso or a raven card that shoves a piece
-    around must all consult this — the White Tower is forward-only, so a forced
-    step inside it either goes nowhere legal or dumps the victim onto the Rack
-    Sender, which is exactly the way a released prisoner used to get re-racked.
+    around must all consult this — each White Tower square has a single onward
+    neighbour, so a forced step inside it either goes nowhere legal or pushes
+    the victim along the chain towards the Rack Sender.
     """
     space = board.space(player.position)
     if space.immune_to_forced_moves:
@@ -180,12 +179,10 @@ def can_fight(
 ) -> bool:
     """Could ``attacker`` actually start a fight with ``defender`` here?
 
-    The single answer to that question, so the move planner, the landing
-    resolver and the combat intent can't disagree. They used to: a destination
-    was tagged ``[fight]`` for any opponent on the path, which let a player stop
-    short on someone inside the White Tower — where combat is forbidden — purely
-    to dodge the square they would otherwise have landed on. The fight never
-    happened; the dodge did.
+    The single authority, so the move planner, the landing resolver and the
+    combat intent can't disagree — an opponent who fails this test is not
+    offered as a ``[fight]`` stop, which is what stops a player from parking on
+    an unfightable square to dodge the one they would otherwise land on.
 
     ``space_id`` defaults to where the defender is standing; the move planner
     passes the square the attacker would stop on, which is the same thing.
@@ -237,11 +234,9 @@ def _release_from_rack(
 ) -> list[dict[str, Any]]:
     """Unlock the Rack and step the player out of the cell.
 
-    Serving the sentence used to clear the status and leave the piece sitting
-    on the Rack itself. That is not a square you can be left standing on: it is
-    a dead end whose only exit is the Rack Sender, so the freed player was
-    still one forced step away from being sent straight back down. Walk them
-    out as part of the release.
+    Clearing the status is not enough on its own: the Rack is a dead end, and a
+    piece left standing on it is one forced step from the Rack Sender that
+    would send it straight back down. The release moves the piece off as well.
     """
     player.status = Status.NORMAL
     player.status_turns_remaining = 0
@@ -358,8 +353,16 @@ def apply(
     handler = _INTENTS.get(intent_name)
     if handler is None:
         raise RuleError(f"Unknown intent: {intent_name}")
-    statuses_before = {p.username: p.status for p in state.players}
-    new_state, events = handler(state, payload, board=board, rng=rng)
+    # Handlers mutate in place and there is no unwind, so give them a copy to
+    # spoil. Only a handler that returns hands its work back to the caller.
+    working = state.model_copy(deep=True)
+    statuses_before = {p.username: p.status for p in working.players}
+    try:
+        new_state, events = handler(working, payload, board=board, rng=rng)
+    except (EffectError, combat_mod.CombatError) as exc:
+        # Sub-system refusals are ordinary invalid input, not engine faults —
+        # surface them the same way a handler's own RuleError is surfaced.
+        raise RuleError(str(exc)) from exc
     _raise_confinement_notice(new_state, statuses_before, events)
     # Tally here rather than at each game-over site: handlers log their events
     # on the way out, so this is the first point where the log is complete for
@@ -422,9 +425,9 @@ def _intent_start_game(state, payload, *, board, rng):
 #:
 #: Some cards are only worth playing when you know how the turn went. A Tower
 #: Pass buys the extra turn you now know you need; Sanctuary is a retreat you
-#: take after seeing where you landed. The Pardons and Confession go further —
-#: they answer a confinement that a *landing* imposed, so before this they were
-#: unreachable at the only moment they mattered.
+#: take after seeing where you landed. The Pardons and Confession answer a
+#: confinement that the landing itself imposed, so this is the only moment they
+#: can be played against it.
 #:
 #: Everything absent from this set stays pre-roll-only, because it acts on a
 #: roll that has already happened: Disguise (handled during path choice
@@ -463,11 +466,10 @@ _NO_CARD_PLAY_PHASES = (Phase.LOBBY, Phase.COMBAT, Phase.GAME_OVER)
 def _intent_play_card_pre_roll(state, payload, *, board, rng):
     """Play a utility/custom card from hand.
 
-    Named for the pre-roll case it was written for, but it now covers three
-    windows:
+    Covers three windows despite the name:
 
-    * the pre-roll phases, as before;
-    * ``TURN_END`` for the cards in :data:`POST_MOVE_PLAYABLE_EFFECTS`, which
+    * the pre-roll phases (``TURN_START`` / ``PRE_ROLL``);
+    * ``TURN_END``, for the cards in :data:`POST_MOVE_PLAYABLE_EFFECTS`, which
       are only worth playing once you can see how the turn went;
     * any time at all, for a confined player reaching for one of
       :data:`SELF_RESCUE_EFFECTS`.
@@ -484,10 +486,7 @@ def _intent_play_card_pre_roll(state, payload, *, board, rng):
     if state.phase in _NO_CARD_PLAY_PHASES:
         raise RuleError(f"Cannot play cards during {state.phase.value}")
     if not (player.confined and card.effect_key in SELF_RESCUE_EFFECTS):
-        _require_phase(
-            state, Phase.TURN_START, Phase.PRE_ROLL, Phase.ACCREDITATION_ATTEMPT,
-            Phase.TURN_END,
-        )
+        _require_phase(state, Phase.TURN_START, Phase.PRE_ROLL, Phase.TURN_END)
         _require_current_player(state, username)
     # Only certain categories are playable pre-roll.
     if card.kind != "tower":
@@ -591,7 +590,7 @@ def _intent_redraw_cards(state, payload, *, board, rng):
 
 
 def _intent_roll_dice(state, payload, *, board, rng):
-    _require_phase(state, Phase.TURN_START, Phase.PRE_ROLL, Phase.ACCREDITATION_ATTEMPT)
+    _require_phase(state, Phase.TURN_START, Phase.PRE_ROLL)
     username = payload["username"]
     player = _require_current_player(state, username)
 
@@ -730,9 +729,8 @@ def _split_movable_targets(
     for p in state.players:
         if p.username == roller.username:
             continue
-        # A locked-up piece stays locked up. Moving it would leave the player
-        # "imprisoned" on some unrelated square, which is how confinement was
-        # being laundered into a free teleport.
+        # A locked-up piece stays locked up: moving it would leave the player
+        # "imprisoned" on some unrelated square.
         if p.confined:
             continue
         # Nor may the roll reach into the White Tower (or any square the board
@@ -794,11 +792,9 @@ def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, s
 
 def _commit_move(state: GameState, board: Board, player: PlayerState, dest: str, path: list[str]) -> list[dict[str, Any]]:
     old = player.position
-    # The exit used to grab anyone who crossed it holding a jewel and a coin.
-    # It can't any more: cashing in costs you your whole hand, so walking past
-    # the door has to be allowed. ``compute_destinations`` offers the exit as a
-    # destination whenever a coin-holder can reach it — choosing it is the
-    # decision, and landing on it is what cashes you in.
+    # Walking past the Cradle Tower is allowed; only ending the move on it
+    # cashes you in. ``compute_destinations`` offers the exit as a destination
+    # whenever a coin-holder can reach it, so choosing it is the decision.
     player.position = dest
     state.turn.pending_move = None
     # Record every newly-stepped-on square so subsequent movement this turn
@@ -972,11 +968,6 @@ def _resolve_landing(
         evs.extend(_use_the_exit(state, board, player))
         return evs
 
-    # Bloody / Beauchamp / Bowyer / Rack landed on by normal movement:
-    # "just visiting" unless the move was directed by an effect. Our landing
-    # resolver is called only from normal movement, so these are visit-only.
-    # (Raven effects teleport and set status themselves.)
-
     # Firecrackers escape: a player affected by Firecrackers escapes the
     # effect the moment they land outside the White Tower.
     if space.region != "white_tower" and player.username in state.firecrackers_affected:
@@ -1113,20 +1104,33 @@ def _check_jewel_endgame(state: GameState, board: Board) -> list[dict[str, Any]]
     )]
 
 
+def _recycle(draw: list[Card], discard: list[Card]) -> tuple[list[Card], list[Card]]:
+    """Turn the discard pile over into a fresh, shuffled draw pile.
+
+    Shared by both decks so neither can quietly skip the shuffle: an unshuffled
+    recycle deals the whole deck back out in a known order.
+    """
+    if draw or not discard:
+        return draw, discard
+    draw, discard = discard, []
+    try:
+        _GLOBAL_RNG.get().shuffle(draw)
+    except RuntimeError:
+        # RNG not wired (a unit test calling in directly); leave the order.
+        log.warning("Deck recycled without an RNG; draw order is not shuffled")
+    return draw, discard
+
+
 def _draw_tower(state: GameState) -> Optional[Card]:
-    if not state.tower_draw:
-        if not state.tower_discard:
-            return None
-        state.tower_draw = state.tower_discard
-        state.tower_discard = []
-        try:
-            _GLOBAL_RNG.get().shuffle(state.tower_draw)
-        except RuntimeError:
-            # RNG not wired (e.g. unit test called directly); leave order as-is.
-            pass
-    if state.tower_draw:
-        return state.tower_draw.pop()
-    return None
+    """Top of the tower deck, recycling the discard pile when it runs dry."""
+    state.tower_draw, state.tower_discard = _recycle(state.tower_draw, state.tower_discard)
+    return state.tower_draw.pop() if state.tower_draw else None
+
+
+def _draw_raven(state: GameState) -> Optional[Card]:
+    """Top of the raven deck, recycling the discard pile when it runs dry."""
+    state.raven_draw, state.raven_discard = _recycle(state.raven_draw, state.raven_discard)
+    return state.raven_draw.pop() if state.raven_draw else None
 
 
 # =========================================================================
@@ -1188,12 +1192,10 @@ def _dispatch_space_action(
         return evs, False
 
     if key == "go_back_by_roll":
-        # "Go back the number thrown" means back along the route you just walked,
+        # "Go back the number thrown" means back along the route just walked,
         # not back that many positions in wall-walk order. Since the number
-        # thrown is the number that brought you here, retracing it normally puts
-        # you exactly where you started the turn — which is the point of the
-        # square. Counting board positions instead landed players on squares
-        # they had never been near.
+        # thrown is the number that brought the player here, retracing it puts
+        # them back where the turn started — which is the point of the square.
         total = sum(state.turn.roll) if state.turn.roll else 0
         if total <= 0:
             return evs, False
@@ -1354,15 +1356,9 @@ def _dispatch_space_action(
 
 
 def _draw_raven_and_resolve(state: GameState, board: Board, player: PlayerState) -> list[dict[str, Any]]:
-    if not state.raven_draw:
-        # Reshuffle.
-        if state.raven_discard:
-            state.raven_draw = state.raven_discard
-            state.raven_discard = []
-            # Rng will be used elsewhere; we'll trust the engine to shuffle.
-    if not state.raven_draw:
+    card = _draw_raven(state)
+    if card is None:
         return [_ev("raven_deck_empty")]
-    card = state.raven_draw.pop()
     state.raven_discard.append(card)
     state.active_raven_notice = RavenNotice(
         card_id=card.id,
@@ -1731,9 +1727,8 @@ def _resolve_split_target_leg(
         other_player_positions=others,
         visited_this_turn=[target.position],
         warder_blocking_spaces=_warder_blocked_spaces(state, board),
-        # Same rule as the roller's leg — the assigned steps are spent in full.
-        # Without this, a target given 4 could be parked on a player standing 1
-        # square away, which is how a 4 was quietly being spent as a 1.
+        # Same rule as the roller's leg: the assigned steps are spent in full,
+        # so a target given 4 cannot be parked on a player one square away.
         allow_combat_stops=False,
     )
     if not opts.destinations:
@@ -1840,13 +1835,13 @@ def _intent_play_combat_special(state, payload, *, board, rng):
         raise RuleError(f"Defender has no card {card_id}")
     # Sanctuary burns both players' committed cards and replaces them, so the
     # special needs the tower deck.
-    tower_deck = _deck_view(state, "tower")
+    tower_deck = _tower_deck_view(state)
     attacker_committed = len(state.combat.attacker_cards)
     defender_committed = len(state.combat.defender_cards)
     combat = combat_mod.play_defender_special(
         state, card_id, board.data.chapel_royal_space, rng, tower_deck,
     )
-    _sync_deck(state, "tower", tower_deck)
+    _sync_tower_deck(state, tower_deck)
     # Discard the special card.
     state.tower_discard.append(card)
     evs = [_ev("combat_special", player=username, card=card.name)]
@@ -1911,7 +1906,7 @@ def _intent_reveal_combat(state, payload, *, board, rng):
     hand_before = {c.id for c in winner_state.hand}
 
     # Auto-resolve right away — there are no more decisions to make.
-    tower_deck = _deck_view(state, "tower")
+    tower_deck = _tower_deck_view(state)
     combat_mod.resolve(
         state,
         tower_deck,
@@ -1919,7 +1914,7 @@ def _intent_reveal_combat(state, payload, *, board, rng):
         devereux_max_coins=state.coins_total or MAX_COINS,
         rng=rng,
     )
-    _sync_deck(state, "tower", tower_deck)
+    _sync_tower_deck(state, tower_deck)
     # Which cards the victor actually drew. Diffing the hand avoids threading a
     # return value back out of combat.resolve(). Only the winner can turn these
     # ids into names — every other client has an empty hand for them.
@@ -1948,19 +1943,14 @@ def _intent_reveal_combat(state, payload, *, board, rng):
     return state, evs
 
 
-def _deck_view(state: GameState, which: str) -> Deck:
-    if which == "tower":
-        return Deck(draw_pile=state.tower_draw, discard_pile=state.tower_discard)
-    return Deck(draw_pile=state.raven_draw, discard_pile=state.raven_discard)
+def _tower_deck_view(state: GameState) -> Deck:
+    """Lend the tower deck to :mod:`combat`, which works in :class:`Deck` terms."""
+    return Deck(draw_pile=state.tower_draw, discard_pile=state.tower_discard)
 
 
-def _sync_deck(state: GameState, which: str, deck: Deck) -> None:
-    if which == "tower":
-        state.tower_draw = deck.draw_pile
-        state.tower_discard = deck.discard_pile
-    else:
-        state.raven_draw = deck.draw_pile
-        state.raven_discard = deck.discard_pile
+def _sync_tower_deck(state: GameState, deck: Deck) -> None:
+    state.tower_draw = deck.draw_pile
+    state.tower_discard = deck.discard_pile
 
 
 # =========================================================================
@@ -2048,8 +2038,6 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
     evs.extend(_resume_deferred_split_leg(state, board))
     _log(state, evs)
     return state, evs
-
-
 
 
 # =========================================================================
@@ -2176,23 +2164,30 @@ def _intent_resolve_raven_effect(state, payload, *, board, rng):
 
 
 def _intent_end_turn(state, payload, *, board, rng):
-    _require_phase(state, Phase.TURN_END, Phase.PRE_ROLL, Phase.ACCREDITATION_ATTEMPT, Phase.TURN_START)
+    _require_phase(state, Phase.TURN_END, Phase.PRE_ROLL, Phase.TURN_START)
     # Hospital miss: if the player never rolled (called end_turn from TURN_START),
     # still honour the hospital/miss flag so they can't bypass it.
+    # Everything the wind-down produces before play actually moves on. Collected
+    # rather than logged on the spot so it reaches the clients too: only the
+    # returned list is broadcast, and a missed turn that shows up in nobody's
+    # log looks like the server skipping a player for no reason.
+    pre_evs: list[dict[str, Any]] = []
     username = payload.get("username")
     if username:
         try:
             ender = state.player(username)
-            if ender.miss_next_turn and state.phase == Phase.TURN_START:
+            if ender.miss_next_turn and state.phase in (Phase.TURN_START, Phase.PRE_ROLL):
                 ender.miss_next_turn = False
                 if ender.status == Status.HOSPITAL:
                     ender.status = Status.NORMAL
-                # Don't consume extra_turns_queued — the missed turn was forced.
-                state.turn.extra_turns_queued = 0
+                # PRE_ROLL counts as well as TURN_START: playing a card before
+                # rolling moves the phase on, and that must not let the miss
+                # slip past unconsumed. Extra turns already banked survive it —
+                # a Tower Pass bought a real turn, and the forced miss is not
+                # the turn it bought.
                 state.phase = Phase.TURN_END
-                ev = _ev("missed_turn", player=ender.username)
-                _log(state, [ev])
-                # Fall through to normal end_turn advance by continuing.
+                pre_evs.append(_ev("missed_turn", player=ender.username))
+                # Fall through to the normal end-of-turn advance below.
             elif state.phase == Phase.TURN_START and ender.status in (
                 Status.RACKED, Status.IMPRISONED, Status.TORTURED,
             ):
@@ -2203,11 +2198,10 @@ def _intent_end_turn(state, payload, *, board, rng):
                 ender.status_turns_remaining = max(0, ender.status_turns_remaining - 1)
                 if ender.status_turns_remaining == 0:
                     if ender.status == Status.RACKED:
-                        release_evs = _release_from_rack(state, ender, board)
+                        pre_evs.extend(_release_from_rack(state, ender, board))
                     else:
                         ender.status = Status.NORMAL
-                        release_evs = [_ev("confinement_expired", player=ender.username)]
-                    _log(state, release_evs)
+                        pre_evs.append(_ev("confinement_expired", player=ender.username))
         except KeyError:
             pass
     # Extra turns queued by Tower Pass / Clerk's Tea / etc.
@@ -2228,8 +2222,9 @@ def _intent_end_turn(state, payload, *, board, rng):
             "consecutive_doubles": doubles,
         })
         state.phase = Phase.TURN_START
-        _log(state, [_ev("extra_turn_used", player=state.current_player().username)])
-        return state, [_ev("extra_turn_used", player=state.current_player().username)]
+        evs = pre_evs + [_ev("extra_turn_used", player=state.current_player().username)]
+        _log(state, evs)
+        return state, evs
     # Firecrackers resolution: the outgoing player had their "one turn" to
     # leave the White Tower. If they're still inside, off to the Rack.
     fc_events: list[dict[str, Any]] = []
@@ -2303,7 +2298,7 @@ def _intent_end_turn(state, payload, *, board, rng):
     if cur.extra_turns_pending > 0:
         state.turn.extra_turns_queued += cur.extra_turns_pending
         cur.extra_turns_pending = 0
-    evs = fc_events + skip_evs + [_ev("turn_start", player=cur.username)]
+    evs = pre_evs + fc_events + skip_evs + [_ev("turn_start", player=cur.username)]
     _log(state, evs)
     return state, evs
 
@@ -2347,14 +2342,8 @@ def _slow_ranking(state: GameState) -> list[dict[str, Any]]:
     return [row[4] for row in scored]
 
 
-def _slow_winner(state: GameState) -> Optional[str]:
-    """Backwards-compatible wrapper around ``_slow_ranking``."""
-    r = _slow_ranking(state)
-    return r[0]["username"] if r else None
-
-
 # =========================================================================
-# Notification dismissal (any player can dismiss the public raven notice)
+# Ending the game early / dismissing the public notices
 # =========================================================================
 
 

@@ -18,6 +18,15 @@ from .board_schema import BoardData, SpaceData, SpaceKind
 log = logging.getLogger(__name__)
 
 
+#: Cache key for :meth:`Board.reachable`: everything the answer depends on.
+_ReachKey = tuple[str, int, bool, frozenset[str], frozenset[str]]
+
+
+def _copy_paths(paths: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Copy a ``{destination: path}`` map so callers can't reach into the cache."""
+    return {dest: list(path) for dest, path in paths.items()}
+
+
 class Board:
     def __init__(self, data: BoardData):
         self.data = data
@@ -50,13 +59,10 @@ class Board:
                 self._neighbors.setdefault(te.src, set()).add(te.to)
             if te.direction in ("bidirectional", "backward"):
                 self._neighbors.setdefault(te.to, set()).add(te.src)
-        # ...and the card-gated ones must not be reachable by accident. The
-        # board file lists them twice — once in ``traversal_edges`` and once,
-        # historically, in the ``neighbors`` array of the squares they join —
-        # and the second listing makes them free to everybody. That is how a
-        # player released from the Rack was offered the far side of the rope
-        # with an empty hand. Strip them here so a re-added neighbour entry
-        # can't quietly reopen the shortcut.
+        # ...and the card-gated ones must not be reachable by accident. If a
+        # card-gated edge is also listed in the ``neighbors`` array of either
+        # square it joins, that second listing would make the shortcut free to
+        # everybody. Strip it here, loudly.
         for te in data.traversal_edges:
             if not te.requires_card:
                 continue
@@ -68,7 +74,7 @@ class Board:
                         te.id or f"{te.src}->{te.to}", te.requires_card, a, b,
                     )
                     self._neighbors[a].discard(b)
-        # Wall-walk order cycle.
+        # Wall-walk order, start square first.
         walk = [s for s in data.spaces if s.region == "wall_walk" and s.wall_walk_order is not None]
         walk.sort(key=lambda s: s.wall_walk_order or 0)
         self._walk_order: list[str] = [s.id for s in walk]
@@ -79,6 +85,12 @@ class Board:
             for n in nbrs:
                 if n not in self._by_id:
                     raise ValueError(f"Board: space {sid!r} references unknown neighbour {n!r}")
+
+        # Memoised :meth:`reachable` results. The graph is fixed for the life of
+        # the Board, so a query is a pure function of its arguments — and the
+        # engine asks the same ones repeatedly (a split roll probes every leg
+        # length for every player, and the planner re-runs on each re-render).
+        self._reach_cache: dict[_ReachKey, dict[str, list[str]]] = {}
 
     # ---------- constructors -------------------------------------------------
 
@@ -157,15 +169,15 @@ class Board:
         sp = self._by_id.get(space_id)
         return sp.wall_walk_order if sp else None
 
-    def wall_walk_cycle(self) -> list[str]:
+    def wall_walk_order(self) -> list[str]:
+        """The wall-walk spaces in order, from the start square to Queen's House."""
         return list(self._walk_order)
 
     def next_wall_walk_space(self, space_id: str) -> Optional[str]:
         """Follow the wall-walk order forward by one step.
 
-        The wall walk is a linear dead-end from ``ww00_start`` to
-        Queen's House (``rules.wall_walk_is_closed_loop`` is False), so this
-        returns ``None`` when called on the final wall-walk space.
+        The wall walk is a linear dead-end from ``ww00_start`` to Queen's
+        House, so this returns ``None`` on the final wall-walk space.
         """
         idx = self._walk_index.get(space_id)
         if idx is None or not self._walk_order:
@@ -185,6 +197,29 @@ class Board:
         if idx is None or idx <= 0:
             return None
         return self._walk_order[idx - 1]
+
+    # ---------- reachability cache -------------------------------------------
+
+    #: Entries to keep before dropping the oldest. A turn touches a handful of
+    #: distinct queries; the cap only exists so a long game can't grow it without
+    #: bound.
+    _REACH_CACHE_MAX = 4096
+
+    def _cache_get(self, key: "_ReachKey") -> Optional[dict[str, list[str]]]:
+        hit = self._reach_cache.get(key)
+        return None if hit is None else _copy_paths(hit)
+
+    def _cache_put(
+        self, key: "_ReachKey", value: dict[str, list[str]],
+    ) -> dict[str, list[str]]:
+        """Store ``value`` and hand the caller its own copy to do as it likes with."""
+        if len(self._reach_cache) >= self._REACH_CACHE_MAX:
+            # Plain FIFO eviction: dicts keep insertion order, and the access
+            # pattern is "the current turn", not a long tail worth ranking.
+            for stale in list(self._reach_cache)[: self._REACH_CACHE_MAX // 4]:
+                del self._reach_cache[stale]
+        self._reach_cache[key] = value
+        return _copy_paths(value)
 
     # ---------- traversal ----------------------------------------------------
 
@@ -235,24 +270,31 @@ class Board:
           Starting outside the wall walk, or reaching the dead-end before the
           step count is exhausted, yields no destinations.
         - ``blocked`` is a set of space ids that may not be entered.
-        - ``visited`` is a set of space ids that cannot be re-entered this turn
-          (per ``rules.no_revisit_during_turn``). The starting space is always
-          implicitly excluded from being re-entered mid-path.
+        - ``visited`` is a set of space ids that cannot be re-entered this turn.
+          The starting space is always implicitly excluded from being re-entered
+          mid-path.
 
         The returned path includes the starting space as index 0 and the
         destination at index ``steps``. Free movement enumerates all *simple*
         paths of exactly ``steps`` and records one path per reachable
         destination (the first found by DFS). Alternate routes between the
         same pair can be probed via :meth:`path_between`.
+
+        Results are memoised on the board (see :meth:`_cache_get`); callers get
+        a private copy and may keep or mutate it freely.
         """
         if steps <= 0:
             return {}
-        blocked_set: set[str] = set(blocked or ())
-        visited_set: set[str] = set(visited or ())
+        blocked_set: frozenset[str] = frozenset(blocked or ())
+        visited_set: frozenset[str] = frozenset(visited or ())
+        key = (from_space, steps, forward_only, blocked_set, visited_set)
+        hit = self._cache_get(key)
+        if hit is not None:
+            return hit
 
         if forward_only:
             if from_space not in self._walk_index or not self._walk_order:
-                return {}
+                return self._cache_put(key, {})
             path = [from_space]
             cur = from_space
             for _ in range(steps):
@@ -263,12 +305,12 @@ class Board:
                     # advanced at all, there's no legal destination.
                     break
                 if nxt in blocked_set or nxt in visited_set:
-                    return {}
+                    return self._cache_put(key, {})
                 path.append(nxt)
                 cur = nxt
             if cur == from_space:
-                return {}
-            return {cur: path}
+                return self._cache_put(key, {})
+            return self._cache_put(key, {cur: path})
 
         # Free movement: enumerate simple paths of exactly ``steps``, where
         # "simple" is relative to both this move *and* the turn's prior
@@ -294,7 +336,7 @@ class Board:
                 on_path.discard(nxt)
 
         dfs(0)
-        return results
+        return self._cache_put(key, results)
 
     def reachable_within(
         self,

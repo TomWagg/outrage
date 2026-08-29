@@ -307,11 +307,8 @@ const CONFINEMENT_CAUSE_LEAD: Record<string, string> = {
 };
 
 /**
- * Copy for the red confinement banner.
- *
- * Deliberately theatrical: being locked up is the worst thing that happens to a
- * player who isn't losing a fight, and it used to register as nothing more than
- * a status word in the side panel.
+ * Copy for the red confinement banner. Deliberately theatrical: being locked up
+ * is the worst thing that happens to a player who isn't losing a fight.
  */
 export function confinementCopy(
   status: string,

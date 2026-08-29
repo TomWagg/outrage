@@ -20,6 +20,7 @@ Several raven effects can't be fully resolved without player input (e.g.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any, Callable, Optional
 
 from .board import Board
@@ -109,6 +110,17 @@ def _summon_to(state: GameState, player: PlayerState, space_id: str, board: Boar
     return evs
 
 
+def _draw_tower_card(state: GameState) -> Optional[Card]:
+    """Draw one tower card, recycling the discard pile if the deck has run out.
+
+    Thin wrapper over ``rules._draw_tower`` (deferred import — rules imports this
+    module at module level) so every draw site recycles and reshuffles the same
+    way.
+    """
+    from .rules import _draw_tower
+    return _draw_tower(state)
+
+
 def _clear_confinement(player: PlayerState) -> None:
     player.status = Status.NORMAL
     player.status_turns_remaining = 0
@@ -150,8 +162,7 @@ def _tower_pass(state, player, params, *, board, rng, **kw):
     mode = params.get("mode", "extra_turn")
     if mode == "accredit":
         if player.accredited:
-            # Nothing to buy. The button used to be offered regardless and
-            # burned the card for no effect.
+            # Nothing to buy; refuse rather than burn the card for no effect.
             raise EffectError("You are already accredited")
         if player.position != board.data.queens_house_space:
             raise EffectError("Tower Pass accredit requires being at Queen's House")
@@ -527,9 +538,7 @@ def _stopped(state, player, params, *, board, rng, **kw):
         return state, [_event("stopped_and_searched", player=player.username, carried_jewels=0)]
 
     # Carrying a jewel, so there is a decision to make: show a Disguise, or
-    # forfeit. Park for input until they answer. Without this the card resolved
-    # itself the instant it was turned over and confiscated everything, and the
-    # Disguise in the victim's hand was never asked for.
+    # forfeit. Park for input until they answer.
     play_disguise = params.get("play_disguise")
     if play_disguise is None:
         return state, [_event(
@@ -539,8 +548,7 @@ def _stopped(state, player, params, *, board, rng, **kw):
         )]
 
     if play_disguise:
-        # Spend it here. Nothing upstream was consuming the card, so a Disguise
-        # played against a search used to be free.
+        # Spent here — nothing upstream consumes the card for this path.
         card = _disguise_in_hand(player)
         if card is None:
             raise EffectError("You have no Disguise to show")
@@ -601,22 +609,38 @@ def _ghost(state, player, params, *, board, rng, **kw):
     return state, evs
 
 
+#: The Queen's official birthday. Drawing this card on the day is worth double.
+QUEENS_BIRTHDAY = (4, 21)
+
+
+def _is_queens_birthday(params: dict[str, Any]) -> bool:
+    """Is it the 21st of April?
+
+    Reads the wall clock, which is the one piece of engine behaviour that
+    legitimately depends on something outside :class:`GameState`. Tests (and a
+    replay of a saved game) pin it by passing ``today`` as ``"YYYY-MM-DD"``.
+    """
+    stamp = params.get("today")
+    if stamp:
+        try:
+            when = date.fromisoformat(str(stamp))
+        except ValueError as exc:
+            raise EffectError(f"Bad 'today' value: {stamp!r}") from exc
+    else:
+        when = date.today()
+    return (when.month, when.day) == QUEENS_BIRTHDAY
+
+
 @register("queens_birthday")
 def _birthday(state, player, params, *, board, rng, **kw):
-    # The engine's clock is injected via params['today'] = "YYYY-MM-DD".
-    today = params.get("today", "")
-    is_april_21 = today.endswith("-04-21")
-    draws_per_player = 2 if is_april_21 else 1
+    """Everyone draws a tower card — two each on the Queen's birthday itself."""
+    draws_per_player = 2 if _is_queens_birthday(params) else 1
     evs: EventList = []
     for p in state.players:
         for _ in range(draws_per_player):
-            if not state.tower_draw:
-                state.tower_draw = state.tower_discard
-                state.tower_discard = []
-                rng.shuffle(state.tower_draw)
-            if not state.tower_draw:
+            card = _draw_tower_card(state)
+            if card is None:
                 break
-            card = state.tower_draw.pop()
             p.add_card(card)
             evs.append(_event("tower_card_drawn", player=p.username, card=card.id))
     return state, evs
@@ -629,13 +653,9 @@ def _lost(state, player, params, *, board, rng, **kw):
 
 @register("chief_yeoman_passes")
 def _chief(state, player, params, *, board, rng, **kw):
-    if not state.tower_draw:
-        state.tower_draw = state.tower_discard
-        state.tower_discard = []
-        rng.shuffle(state.tower_draw)
-    if not state.tower_draw:
+    card = _draw_tower_card(state)
+    if card is None:
         return state, [_event("tower_deck_empty")]
-    card = state.tower_draw.pop()
     player.add_card(card)
     return state, [_event("tower_card_drawn", player=player.username, card=card.id)]
 

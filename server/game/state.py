@@ -21,13 +21,11 @@ class Phase(str, Enum):
     LOBBY = "LOBBY"
     TURN_START = "TURN_START"
     PRE_ROLL = "PRE_ROLL"
-    ROLLING = "ROLLING"
     MOVING = "MOVING"
     CHOOSING_PATH = "CHOOSING_PATH"
     COMBAT = "COMBAT"
     JEWEL_ATTEMPT = "JEWEL_ATTEMPT"
     CARD_CHANGE = "CARD_CHANGE"
-    ACCREDITATION_ATTEMPT = "ACCREDITATION_ATTEMPT"
     RAVEN_EFFECT = "RAVEN_EFFECT"
     SPLIT_SEVEN_ASSIGN = "SPLIT_SEVEN_ASSIGN"
     TURN_END = "TURN_END"
@@ -199,7 +197,7 @@ class PendingCardChange(BaseModel):
 class PendingSplitSeven(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    total: int = 7  # usually 7, but Binary Disruption can reuse this struct
+    total: int = 7  # the roll being split: 7, or any total under Binary Disruption
     source: Literal["seven", "binary_disruption"] = "seven"
     # username -> the leg sizes that would actually move them somewhere. A
     # player who is boxed in (an un-accredited piece parked on Queen's House,
@@ -380,11 +378,10 @@ class GameState(BaseModel):
     # Jewels + coins
     jewels_available: dict[JewelId, str] = Field(default_factory=dict)  # jewel -> space_id
     loose_jewels: dict[str, list[JewelId]] = Field(default_factory=dict)  # space_id -> jewels
-    # The Devereux Tower holds one coin more than there are players, so exactly
-    # one player can always be left short. ``coins_total`` is the size of that
-    # pile (set at ``start_game``); ``coins_available`` is how many are still
-    # sitting in the tower. Coins handed back — the Rack toll, a fight won by
-    # someone already holding one — go back onto the pile, never above the cap.
+    # ``coins_total`` is the size of the Devereux coin pile, set to the player
+    # count at ``start_game``; ``coins_available`` is how many are still sitting
+    # in the tower. Coins handed back — the Rack toll, a fight won by someone
+    # already holding one — go back onto the pile, never above the cap.
     coins_total: int = 5
     coins_available: int = 5
 

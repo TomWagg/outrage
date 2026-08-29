@@ -1,0 +1,124 @@
+<meta charset="utf-8">
+<title>Spoiler-gating check</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>
+  body{background:#1a1a1a;color:#f0ead6;font-family:Georgia,serif;padding:1rem;margin:0}
+  h2{font-size:.85rem;letter-spacing:.12em;text-transform:uppercase;margin:1.2rem 0 .5rem}
+  .bar{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}
+  .bar button{font-size:.75rem;padding:.2rem .5rem}
+  .note{color:#888;font-size:.78rem;margin:.3rem 0 .8rem}
+</style>
+
+<!--
+  The controls panel must not give away two things the rest of the UI is still
+  in the middle of showing: a roll whose dice are still tumbling, and a raven
+  card that is still face-down in the modal. Both are driven by state the
+  server has already resolved, so the gating is the only thing stopping the
+  side panel from spelling out the answer early.
+-->
+
+<h2>Raven card, face-down</h2>
+<div class="note">Neither button may name the effect (rack_of_torment) while revealed=false.</div>
+<div class="bar">
+  <button id="raven-drawer">as the drawer</button>
+  <button id="raven-other">as another player</button>
+  <button id="raven-revealed">revealed</button>
+</div>
+<div id="raven-slot"></div>
+
+<h2>Dice still rolling</h2>
+<div class="note">CHOOSING_PATH must not list destinations (which spell out the roll) until the dice land.</div>
+<div class="bar">
+  <button id="dice-rolling">rolling</button>
+  <button id="dice-landed">landed</button>
+</div>
+<div id="dice-slot"></div>
+
+<script type="module">
+  import { renderControlsPanel } from "/src/ui/controls.ts";
+
+  const ws = { on: () => {}, send: async () => {} };
+
+  function baseState(overrides) {
+    return {
+      you: "Tom",
+      board: {
+        spaces: [
+          { id: "ww01", label: "Wall Walk 1", region: "wall_walk", kind: "normal", neighbors: [] },
+          { id: "ww02", label: "Devereux Tower", region: "wall_walk", kind: "devereux", neighbors: [] },
+          { id: "ww03", label: "Bell Tower", region: "wall_walk", kind: "tower", neighbors: [] },
+        ],
+        warder_posts: [], barracks_space: "barracks", escape_space: "cradle",
+      },
+      log: [],
+      game: {
+        phase: "TURN_END",
+        players: [
+          { username: "Tom", hand: [], hand_size: 0, position: "ww01", jewels: [],
+            accredited: true, status: "NORMAL", miss_next_turn: false },
+          { username: "Alex", hand: [], hand_size: 3, position: "ww05", jewels: [],
+            accredited: true, status: "NORMAL", miss_next_turn: false },
+        ],
+        turn_order: ["Tom", "Alex"], current_turn_index: 0,
+        warders: [], combat: null, active_raven_notice: null,
+        jewels_available: {},
+        turn: {
+          roll: [], consecutive_doubles: 0, extra_turns_queued: 0,
+          visited_this_turn: [], cards_played_this_turn: [],
+          pending_move: null, pending_raven: null, pending_jewel: null,
+          pending_split: null, pending_card_change: null,
+        },
+        ...overrides.game,
+      },
+    };
+  }
+
+  // ---- raven -------------------------------------------------------------
+  const ravenPanel = renderControlsPanel(document.getElementById("raven-slot"));
+  const ravenState = baseState({ game: {
+    phase: "RAVEN_EFFECT",
+    turn: {
+      roll: [], consecutive_doubles: 0, extra_turns_queued: 0,
+      visited_this_turn: [], cards_played_this_turn: [],
+      pending_move: null, pending_jewel: null, pending_split: null,
+      pending_card_change: null,
+      pending_raven: { effect_key: "rack_of_torment", card_id: "raven:rack_of_torment:1",
+                       params: {}, drawer: "Tom" },
+    },
+  }});
+  function setRaven(drawer, revealed) {
+    ravenState.game.turn.pending_raven.drawer = drawer;
+    ravenState.game.active_raven_notice = {
+      card_id: "raven:rack_of_torment:1", effect_key: "rack_of_torment",
+      drawer, params: {}, revealed,
+    };
+    ravenPanel.update(ravenState, ws, {});
+  }
+  document.getElementById("raven-drawer").onclick = () => setRaven("Tom", false);
+  document.getElementById("raven-other").onclick = () => setRaven("Alex", false);
+  document.getElementById("raven-revealed").onclick = () => setRaven("Tom", true);
+
+  // ---- dice --------------------------------------------------------------
+  const dicePanel = renderControlsPanel(document.getElementById("dice-slot"));
+  const diceState = baseState({ game: {
+    phase: "CHOOSING_PATH",
+    turn: {
+      roll: [4, 3], consecutive_doubles: 0, extra_turns_queued: 0,
+      visited_this_turn: ["ww01"], cards_played_this_turn: [],
+      pending_raven: null, pending_jewel: null, pending_split: null,
+      pending_card_change: null,
+      pending_move: {
+        steps: 7,
+        destinations: { ww02: ["ww01", "ww02"], ww03: ["ww01", "ww03"] },
+        requires_disguise: [],
+      },
+    },
+  }});
+  const setDice = (rolling) => dicePanel.update(diceState, ws, { diceRolling: rolling });
+  document.getElementById("dice-rolling").onclick = () => setDice(true);
+  document.getElementById("dice-landed").onclick = () => setDice(false);
+
+  setRaven("Tom", false);
+  setDice(true);
+  window.__check = { ravenState, diceState, setRaven, setDice };
+</script>

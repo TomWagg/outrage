@@ -57,22 +57,27 @@ def land_and_reveal(state: GameState, player: PlayerState, **resolve_params):
 
     A card that still wants an answer after the reveal (a Summons, which may be
     refused) gets ``resolve_params`` sent straight back at it.
+
+    Returns ``(state, player, events)``. ``apply`` works on a copy of the state,
+    so both the state and the player have to be picked back up from what it
+    hands out rather than read off the originals.
     """
+    name = player.username
     evs = _resolve_landing(state, BOARD, player)
     if state.turn.pending_raven is not None:
-        _, more = apply(
-            state, "reveal_raven_notice", {"username": player.username},
+        state, more = apply(
+            state, "reveal_raven_notice", {"username": name},
             board=BOARD, rng=_GLOBAL_RNG.get(),
         )
         evs = evs + more
     if state.turn.pending_raven is not None and resolve_params:
-        _, more = apply(
+        state, more = apply(
             state, "resolve_raven_effect",
-            {"username": player.username, "params": dict(resolve_params)},
+            {"username": name, "params": dict(resolve_params)},
             board=BOARD, rng=_GLOBAL_RNG.get(),
         )
         evs = evs + more
-    return evs
+    return state, state.player(name), evs
 
 
 def test_summons_to_the_museum_draws_a_tower_card():
@@ -81,7 +86,7 @@ def test_summons_to_the_museum_draws_a_tower_card():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("go_to_location", location="museum")]
 
-    evs = land_and_reveal(state, player, accept=True)
+    state, player, evs = land_and_reveal(state, player, accept=True)
 
     assert player.position == BOARD.data.museum_space
     assert "tower_card_drawn" in kinds_of(evs)
@@ -95,7 +100,7 @@ def test_summons_to_devereux_grants_the_coin():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("go_to_location", location="devereux_tower")]
 
-    evs = land_and_reveal(state, player, accept=True)
+    state, player, evs = land_and_reveal(state, player, accept=True)
 
     assert player.position == BOARD.data.devereux_space
     assert "coin_picked_up" in kinds_of(evs)
@@ -107,7 +112,7 @@ def test_shop_for_film_summons_and_resolves_the_shop():
     state = make_state(player)
     state.raven_draw = [raven("shop_for_film")]
 
-    land_and_reveal(state, player)
+    state, player, _ = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.shop_space
 
@@ -117,7 +122,7 @@ def test_governors_tea_starts_the_accreditation_trial_at_queens_house():
     state = make_state(player)
     state.raven_draw = [raven("governors_tea")]
 
-    evs = land_and_reveal(state, player)
+    state, player, evs = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.queens_house_space
     assert "trying_accreditation" in kinds_of(evs)
@@ -142,7 +147,7 @@ def test_summons_onto_a_raven_square_does_not_draw_a_second_raven_card():
         raven("go_to_location", location=dest),
     ]
 
-    evs = land_and_reveal(state, player, accept=True)
+    state, player, evs = land_and_reveal(state, player, accept=True)
 
     assert player.position == dest
     assert kinds_of(evs).count("raven_card_drawn") == 1
@@ -156,7 +161,7 @@ def test_summons_to_the_broad_arrow_tower_still_costs_your_weapons():
     state = make_state(player)
     state.raven_draw = [raven("go_to_location", location="broad_arrow_tower")]
 
-    evs = land_and_reveal(state, player, accept=True)
+    state, player, evs = land_and_reveal(state, player, accept=True)
     ev = next(e for e in evs if e["kind"] == "weapons_surrendered")
 
     assert player.position == "ww29_broad_arrow"
@@ -171,7 +176,7 @@ def test_punishment_cards_do_not_resolve_their_destination():
     state.tower_draw = dummy_tower_cards(1)
     state.raven_draw = [raven("pecked_by_ravens")]
 
-    evs = land_and_reveal(state, player)
+    state, player, evs = land_and_reveal(state, player)
 
     assert player.position == BOARD.data.hospital_space
     assert player.status == Status.HOSPITAL

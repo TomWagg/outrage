@@ -172,8 +172,7 @@ const TOWER_ICONS: Record<string, string> = {
     <path d="M14.5 3.5 V5 M14.5 14 v1.5 M8.5 9.5 H10 M19 9.5 h1.5
              M10.3 5.3 l1 1 M17.7 12.7 l1 1 M18.7 5.3 l-1 1 M11.3 12.7 l-1 1"/>
   `,
-  // Blade as a tapered triangle rather than a line — the old version had a
-  // hook at the point that read as a defect.
+  // Blade as a tapered triangle rather than a line, so the point reads clean.
   Sword: `
     <path d="M20.6 3.4 L12.4 13.4 L10.6 11.6 Z"/>
     <path d="M8.8 9.8 L14.2 15.2"/>

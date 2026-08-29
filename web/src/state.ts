@@ -33,7 +33,7 @@ export interface PlayerStats {
   tower_cards_gained: number;
   raven_cards_triggered: number;
   doubles_rolled: number;
-  total_dice_rolls: number;
+  total_steps_taken: number;
 }
 
 // --- Game ------------------------------------------------------------------
@@ -177,7 +177,7 @@ export interface GameSnapshot {
   loose_jewels: Record<string, string[]>;
   /** Coins still sitting in the Devereux Tower. */
   coins_available: number;
-  /** Size of the pile the game started with (players + 1). */
+  /** Size of the pile the game started with — one coin per player. */
   coins_total: number;
   warders: { id: string; location: string }[];
   combat: Combat | null;
@@ -248,7 +248,7 @@ export interface BoardData {
   royal_armouries_space: string;
   shop_space: string;
   barracks_space: string;
-  warder_posts: { id: string; space_id: string; blocks_space_ids?: string[] }[];
+  warder_posts: { id: string; space_id: string }[];
   raven_deck_space: string;
   metallicity_destination_ids: string[];
   bench_space_ids: string[];

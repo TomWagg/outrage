@@ -47,8 +47,6 @@ interface Cinematic {
   step: number;
   /** Verdict shown; waiting on the winner's new-cards view (or a dismiss). */
   finished: boolean;
-  /** The winner dismissed the spoils view — tear the whole thing down. */
-  dismissed: boolean;
 }
 
 const REVEAL_INTERVAL_MS = 1000;
@@ -129,7 +127,6 @@ function buildCinematic(p: any): Cinematic {
     order: interleave(attackerCards.length, defenderCards.length),
     step: 0,
     finished: attackerCards.length + defenderCards.length === 0,
-    dismissed: false,
   };
 }
 

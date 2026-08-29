@@ -21,7 +21,9 @@ class PlayerStats(BaseModel):
     tower_cards_gained: int = 0
     raven_cards_triggered: int = 0
     doubles_rolled: int = 0
-    total_dice_rolls: int = 0
+    #: Squares actually walked, summed over every move. A roll the player could
+    #: not use, or gave away as half a split, contributes nothing.
+    total_steps_taken: int = 0
 
 
 class StatsStore(BaseModel):

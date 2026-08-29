@@ -53,15 +53,19 @@ def a_raven_trigger_space() -> str:
 
 
 def land_and_reveal(state, player):
-    """Land, then turn the raven card over — effects fire on reveal, not on landing."""
+    """Land, then turn the raven card over — effects fire on reveal, not on landing.
+
+    ``apply`` works on a copy, so the caller must take the state it hands back
+    rather than keep looking at the one it passed in.
+    """
     evs = _resolve_landing(state, BOARD, player)
     if state.turn.pending_raven is not None:
-        _, more = apply(
+        state, more = apply(
             state, "reveal_raven_notice", {"username": player.username},
             board=BOARD, rng=_GLOBAL_RNG.get(),
         )
         evs = evs + more
-    return evs
+    return state, evs
 
 
 def test_go_to_jewel_view_offers_the_attempt_instead_of_ending_the_turn():
@@ -72,12 +76,12 @@ def test_go_to_jewel_view_offers_the_attempt_instead_of_ending_the_turn():
     jewel_space = state.jewels_available["sword"]
     state.raven_draw = [raven_jewel_view("sword")]
 
-    evs = land_and_reveal(state, player)
+    state, evs = land_and_reveal(state, player)
     kinds = [e["kind"] for e in evs]
 
     assert "raven_card_drawn" in kinds
     assert "jewel_attempt_offered" in kinds
-    assert player.position == jewel_space
+    assert state.player("p1").position == jewel_space
     # The whole point: we stop at the attempt rather than falling through to
     # TURN_END and discarding it.
     assert state.phase == Phase.JEWEL_ATTEMPT
@@ -173,7 +177,7 @@ def test_go_to_jewel_view_for_a_taken_jewel_just_ends_the_turn():
     state.jewels_available.pop("sword")
     state.raven_draw = [raven_jewel_view("sword")]
 
-    evs = land_and_reveal(state, player)
+    state, evs = land_and_reveal(state, player)
     kinds = [e["kind"] for e in evs]
 
     assert "jewel_already_taken" in kinds

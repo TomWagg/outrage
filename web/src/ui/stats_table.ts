@@ -18,7 +18,7 @@ export interface LifetimeStats {
   tower_cards_gained: number;
   raven_cards_triggered: number;
   doubles_rolled: number;
-  total_dice_rolls: number;
+  total_steps_taken: number;
 }
 
 export function emptyStats(username: string): LifetimeStats {
@@ -26,7 +26,7 @@ export function emptyStats(username: string): LifetimeStats {
     username, games_played: 0, wins: 0,
     jewels_stolen: 0, coins_stolen: 0, combat_wins: 0, combat_losses: 0,
     racked_count: 0, imprisoned_count: 0,
-    tower_cards_gained: 0, raven_cards_triggered: 0, doubles_rolled: 0, total_dice_rolls: 0,
+    tower_cards_gained: 0, raven_cards_triggered: 0, doubles_rolled: 0, total_steps_taken: 0,
   };
 }
 
@@ -70,7 +70,8 @@ export function renderStatsTable(
       `<th style="padding:2px 4px" title="Times racked / imprisoned">🔒</th>` +
       `<th style="padding:2px 4px" title="Tower cards gained">🗼</th>` +
       `<th style="padding:2px 4px" title="Raven cards triggered">🐦</th>` +
-      `<th style="padding:2px 4px" title="Doubles rolled / total pips rolled">🎲</th>` +
+      `<th style="padding:2px 4px" title="Doubles rolled">🎲</th>` +
+      `<th style="padding:2px 4px" title="Squares walked">👣</th>` +
       `</tr></thead>`,
     `<tbody>`,
     ...rows.map((s) => {
@@ -85,7 +86,8 @@ export function renderStatsTable(
         `<td style="padding:2px 4px">${s.racked_count}/${s.imprisoned_count}</td>` +
         `<td style="padding:2px 4px">${s.tower_cards_gained}</td>` +
         `<td style="padding:2px 4px">${s.raven_cards_triggered}</td>` +
-        `<td style="padding:2px 4px">${s.doubles_rolled}/${s.total_dice_rolls}</td>` +
+        `<td style="padding:2px 4px">${s.doubles_rolled}</td>` +
+        `<td style="padding:2px 4px">${s.total_steps_taken}</td>` +
         `</tr>`
       );
     }),
