@@ -8,6 +8,7 @@
 import type { ClientState, Card, GamePlayer } from "../state.js";
 import { playerByName } from "../state.js";
 import { towerCardIcon } from "./card_art.js";
+import { towerCardCopy } from "./card_descriptions.js";
 
 export function renderHandPanel(root: HTMLElement): { update: (state: ClientState) => void } {
   root.innerHTML = `
@@ -91,6 +92,10 @@ function cardRow(c: Card): HTMLElement {
   const name = document.createElement("span");
   name.textContent = c.name;
   name.style.flex = "1";
+  // What the card does, on hover. The turn panel only lists cards you can play
+  // *now*, so this is where you find out what a card is waiting for.
+  const copy = towerCardCopy(c.name);
+  if (copy.description) name.title = copy.description;
   li.appendChild(name);
 
   if (typeof c.value === "number" && c.value != 0) {

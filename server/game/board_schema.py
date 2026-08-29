@@ -198,6 +198,10 @@ class BoardData(BaseModel):
     queens_house_space: Optional[str] = None
     devereux_space: Optional[str] = None
     rack_space: Optional[str] = None
+    # Where a released prisoner steps out of the Rack. Defaults to the
+    # Rack's sole neighbour (see ``Board.rack_exit_space``) — the Rack is a
+    # dead end, so leaving it and staying put are not the same thing.
+    rack_exit_space: Optional[str] = None
     bloody_tower_space: Optional[str] = None
     beauchamp_tower_space: Optional[str] = None
     bowyer_tower_space: Optional[str] = None

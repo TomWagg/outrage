@@ -42,6 +42,10 @@
   --sq-slide:          #9aa7b4;   /* slide tunnels (under the wall walk)  */
   --sq-slide-ink:      #1b2733;   /* slide arrow + "SLIDE" lettering      */
   --sq-fallback:       #888888;
+  /* Flash colour for the square under the destination you're hovering in the
+     controls list. Deliberately unlike any square fill so it can't be
+     mistaken for the board's own colouring. */
+  --sq-hover:          #00e5ff;
 }
 
 * { box-sizing: border-box; }

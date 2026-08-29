@@ -1,7 +1,8 @@
 """Slow-mode end-of-game scoring and ranking.
 
-- Game ends when only one non-escaped player remains, OR when all jewels
-  have been claimed (no jewels in the White Tower or loose on the board).
+- Game ends when only one non-escaped player remains, OR when every jewel is
+  banked (none in the White Tower, none loose, and none in the pocket of a
+  player still on the board).
 - Ranking sorts by jewel count → top jewel value → sum of jewel values,
   with a deterministic username tie-break.
 """
@@ -58,18 +59,22 @@ def test_slow_ranking_deterministic_username_tiebreak():
     assert [r["username"] for r in _slow_ranking(state)] == ["alice", "zack"]
 
 
-def test_slow_game_ends_when_jewels_exhausted():
-    """If every jewel has been claimed, the game ends at the next turn
-    transition even with multiple non-escaped players still on the board."""
+def test_slow_game_ends_when_every_jewel_is_banked():
+    """Once no jewel is left to steal *or* to take off somebody, the game ends
+    at the next turn transition."""
     players = [
         PlayerState(username="alice", color="red", position="ww00_start",
-                    jewels=["crown_st_edward", "sceptre"], accredited=True),
+                    jewels=[], accredited=True),
         PlayerState(username="bob", color="blue", position="ww00_start",
-                    jewels=["crown_prince_of_wales", "orb", "sword"],
-                    accredited=True),
+                    jewels=["crown_prince_of_wales", "orb", "sword",
+                            "crown_st_edward", "sceptre"],
+                    accredited=True, escaped=True),
+        PlayerState(username="carol", color="green", position="ww00_start",
+                    jewels=[], accredited=True),
     ]
     state = _slow_state(players)
-    # No jewels in the White Tower, none loose — everyone's holding everything.
+    # No jewels in the White Tower, none loose, and the only holder is out —
+    # so two players are still walking but there is nothing left to play for.
     state.jewels_available = {}
     state.loose_jewels = {}
     rng = Rng(seed=0)
@@ -80,8 +85,33 @@ def test_slow_game_ends_when_jewels_exhausted():
     ev = next(e for e in events if e["kind"] == "slow_game_over")
     assert ev["payload"]["winner"] == "bob"
     assert ev["payload"]["reason"] == "jewels_exhausted"
-    assert len(ev["payload"]["ranking"]) == 2
+    assert len(ev["payload"]["ranking"]) == 3
     assert ev["payload"]["ranking"][0]["username"] == "bob"
+
+
+def test_slow_game_continues_while_a_jewel_is_still_carried():
+    """A jewel in the pocket of somebody still on the board is not banked.
+
+    The last jewel leaving its plinth used to end the game on the spot, handing
+    the win to whoever grabbed it — even though the other player could still
+    have taken it off them in a fight.
+    """
+    players = [
+        PlayerState(username="alice", color="red", position="ww00_start",
+                    jewels=[], accredited=True),
+        PlayerState(username="bob", color="blue", position="ww00_start",
+                    jewels=["crown_prince_of_wales", "orb", "sword",
+                            "crown_st_edward", "sceptre"], accredited=True),
+    ]
+    state = _slow_state(players)
+    state.jewels_available = {}
+    state.loose_jewels = {}
+    rng = Rng(seed=0)
+    _GLOBAL_RNG.set(rng)
+    state, events = apply(state, "end_turn", {"username": "alice"},
+                          board=BOARD, rng=rng)
+    assert state.phase != Phase.GAME_OVER
+    assert not any(e["kind"] == "slow_game_over" for e in events)
 
 
 def test_slow_game_ends_when_last_player_remaining():

@@ -7,7 +7,7 @@
 import type { WsClient } from "../net/ws.js";
 import type { ClientState } from "../state.js";
 import { currentTurnUsername, playerByName } from "../state.js";
-import { spaceLabel } from "../board/render.js";
+import { highlightSpace, spaceLabel } from "../board/render.js";
 import { towerCardIcon } from "./card_art.js";
 import { summonsLocationLabel } from "./card_descriptions.js";
 
@@ -84,6 +84,9 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   const pending = root.querySelector<HTMLElement>("#pending-info")!;
   row.innerHTML = "";
   pending.textContent = "";
+  // Buttons are thrown away and rebuilt here, so any square lit by hovering
+  // one of them has nothing left to turn it off again.
+  highlightSpace(null);
 
   const g = state.game;
   root.querySelector<HTMLElement>("#newgame-row")!.innerHTML = "";
@@ -164,15 +167,11 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     const mySpace = state.board?.spaces.find((s) => s.id === me.position);
     const inWhiteTower = mySpace?.region === "white_tower";
     const coLocated = g.players.filter((p) => p.username !== you && !p.escaped && p.position === me.position);
-    for (const enemy of coLocated) {
-      const b = button(`Attack ${enemy.username}`, () =>
+    // No fighting inside the White Tower, so there is nothing to offer there.
+    for (const enemy of inWhiteTower ? [] : coLocated) {
+      row.appendChild(button(`Attack ${enemy.username}`, () =>
         ws.send("initiate_combat", { username: you, target: enemy.username }).catch(noop),
-      );
-      if (inWhiteTower) {
-        b.disabled = true;
-        b.title = "No combat inside the White Tower";
-      }
-      row.appendChild(b);
+      ));
     }
   }
 
@@ -230,26 +229,19 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       }
       // Trade cards instead of rolling: stay put, hand in n cards, take n - 1
       // back. Sits next to Roll because it is the alternative to it.
-      if (me && !missing) {
-        const handSize = me.hand.length;
-        const trade = button(
+      // The server refuses a trade from a prisoner, and the trade costs a card
+      // so it needs two to be worth anything. Neither is offered when it can't
+      // be taken up.
+      const canTrade = !!me && !missing && !confinedNow && (me.hand.length >= 2 || tradeOpen);
+      if (canTrade) {
+        row.appendChild(button(
           tradeOpen ? "Cancel trade" : "Trade cards…",
           () => {
             if (tradeOpen) closeTrade();
             else { tradeOpen = true; tradePicked.clear(); }
             updateControls(root, state, ws);
           },
-        );
-        if (confinedNow) {
-          // The server refuses it too; without this the button was offered to a
-          // prisoner and only failed once they'd picked their cards.
-          trade.disabled = true;
-          trade.title = "No trading while you're locked up";
-        } else if (handSize < 2 && !tradeOpen) {
-          trade.disabled = true;
-          trade.title = "You need at least 2 cards — the trade costs you one";
-        }
-        row.appendChild(trade);
+        ));
       }
       if (tradeOpen && me) renderTradePicker(pending, me, you, state, ws, root);
       renderPreRollCardButtons(pending, g, me, you, state, ws);
@@ -268,7 +260,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           `<div>Choose where to send <strong>${targetName}</strong> ` +
           `(${keys.length} option${keys.length === 1 ? "" : "s"}):</div>`;
         for (const d of keys) {
-          row.appendChild(button(named(state, d), () =>
+          row.appendChild(spaceButton(d, named(state, d), () =>
             ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
       } else {
@@ -299,7 +291,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           const tags =
             (enemy ? "[fight] " : "") + (needsDisguise.has(d) ? "[uses Disguise] " : "");
           const label = `${tags}${named(state, d)}${enemy ? ` (vs ${enemy})` : ""}`;
-          row.appendChild(button(label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
+          row.appendChild(spaceButton(d, label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
       }
       break;
@@ -734,7 +726,10 @@ function renderRavenEffect(
       }
       pending.textContent = "Raven — pick which post to call a warder to:";
       for (const p of free) {
-        row.appendChild(button(p.label, () => sendResolve({ chosen_post: p.id })));
+        const sp = postSpace.get(p.id);
+        row.appendChild(sp
+          ? spaceButton(sp, p.label, () => sendResolve({ chosen_post: p.id }))
+          : button(p.label, () => sendResolve({ chosen_post: p.id })));
       }
       break;
     }
@@ -750,7 +745,7 @@ function renderRavenEffect(
       pending.textContent = "Raven — pick a warder to send to the Barracks:";
       for (const w of out) {
         const spaceLabel = labelFor(state, w.location);
-        row.appendChild(button(`${w.id} (at ${spaceLabel})`, () =>
+        row.appendChild(spaceButton(w.location, `${w.id} (at ${spaceLabel})`, () =>
           sendResolve({ warder_id: w.id }),
         ));
       }
@@ -766,7 +761,7 @@ function renderRavenEffect(
       }
       pending.textContent = "Raven — pick a bench to rest on (miss next turn):";
       for (const b of benches) {
-        row.appendChild(button(labelFor(state, b), () => sendResolve({ bench: b })));
+        row.appendChild(spaceButton(b, labelFor(state, b), () => sendResolve({ bench: b })));
       }
       break;
     }
@@ -789,7 +784,7 @@ function renderRavenEffect(
       }
       pending.textContent = "Raven — pick a square adjacent to a manned post:";
       for (const c of [...candidates].sort()) {
-        row.appendChild(button(labelFor(state, c), () => sendResolve({ destination: c })));
+        row.appendChild(spaceButton(c, labelFor(state, c), () => sendResolve({ destination: c })));
       }
       break;
     }
@@ -804,12 +799,11 @@ function renderRavenEffect(
           jewels + weapons and go to the Bloody Tower.
         </div>
       `;
-      const dBtn = button("Play Disguise", () => sendResolve({ play_disguise: true }));
-      if (!hasDisguise) {
-        dBtn.disabled = true;
-        dBtn.title = "No Disguise card in hand";
+      // With no Disguise in hand there is no choice to make, so don't dangle
+      // one — the forfeit is the only button.
+      if (hasDisguise) {
+        row.appendChild(button("Play Disguise", () => sendResolve({ play_disguise: true })));
       }
-      row.appendChild(dBtn);
       row.appendChild(button("Forfeit (go to Bloody Tower)", () => sendResolve({ play_disguise: false })));
       break;
     }
@@ -894,6 +888,10 @@ function renderPreRollCardButtons(
   if (playable.length === 0) return;
 
   const postMove = allowed === POST_MOVE_PLAYABLE_EFFECTS;
+  // Cards whose conditions aren't met are left out of this list entirely
+  // rather than greyed out. A row of dead buttons reads as "the game is
+  // broken"; a shorter list reads as "not yet". The card itself is still in
+  // your hand panel, where hovering its name says what it does.
   const section = document.createElement("div");
   section.style.marginTop = "0.5rem";
   section.style.paddingTop = "0.5rem";
@@ -944,77 +942,40 @@ function renderPreRollCardButtons(
         label.textContent = `${card.name}:`;
         label.style.fontSize = "0.85rem";
         wrap.appendChild(label);
-        const bAcc = button("Accredit", () => send({ mode: "accredit" }));
-        if (!atQueens) {
-          bAcc.disabled = true;
-          bAcc.title = "Must be at Queen's House";
-        }
-        wrap.appendChild(bAcc);
+        if (atQueens) wrap.appendChild(button("Accredit", () => send({ mode: "accredit" })));
         wrap.appendChild(button("Extra turn", () => send({ mode: "extra_turn" })));
         break;
       }
       case "sanctuary": {
         // Chapel Royal is in the Inner Ward, which is closed to you until the
         // clerks have signed you in — and locked away entirely if you are.
-        const b = button(`Play ${card.name} → Chapel Royal`, () => send({}));
-        if (!me.accredited) {
-          b.disabled = true;
-          b.title = "You must be accredited to enter the Inner Ward";
-        } else if (confined) {
-          b.disabled = true;
-          b.title = "You cannot claim Sanctuary while locked up";
-        }
-        wrap.appendChild(b);
+        if (!me.accredited || confined) break;
+        wrap.appendChild(button(`Play ${card.name} → Chapel Royal`, () => send({})));
         break;
       }
       case "royal_pardon": {
-        const b = button(`Play ${card.name}`, () => send({}));
-        if (status !== "IMPRISONED" && status !== "TORTURED") {
-          b.disabled = true;
-          b.title = "Only works while imprisoned or under questioning";
-        }
-        wrap.appendChild(b);
+        if (status !== "IMPRISONED" && status !== "TORTURED") break;
+        wrap.appendChild(button(`Play ${card.name}`, () => send({})));
         break;
       }
       case "rack_pardon": {
-        const b = button(`Play ${card.name}`, () => send({}));
-        if (status !== "RACKED") {
-          b.disabled = true;
-          b.title = "Only works while on the Rack";
-        }
-        wrap.appendChild(b);
+        if (status !== "RACKED") break;
+        wrap.appendChild(button(`Play ${card.name}`, () => send({})));
         break;
       }
       case "traversal_beauchamp_escape": {
-        const b = button(`Escape with the ${card.name}`, () => send({}));
-        if (status !== "IMPRISONED" || !atBeauchamp) {
-          b.disabled = true;
-          b.title = "Only works while imprisoned in the Beauchamp Tower";
-        }
-        wrap.appendChild(b);
+        if (status !== "IMPRISONED" || !atBeauchamp) break;
+        wrap.appendChild(button(`Escape with the ${card.name}`, () => send({})));
         break;
       }
       case "confession": {
+        if (status !== "TORTURED" || frameable.length === 0) break;
         const label = document.createElement("span");
         label.textContent = `${card.name} — frame:`;
         label.style.fontSize = "0.85rem";
         wrap.appendChild(label);
-        if (status !== "TORTURED") {
-          const n = document.createElement("span");
-          n.textContent = "only under questioning at the Bowyer Tower";
-          n.style.color = "var(--muted)";
-          n.style.fontSize = "0.8rem";
-          wrap.appendChild(n);
-        } else if (frameable.length === 0) {
-          const n = document.createElement("span");
-          n.textContent = "nobody left to frame";
-          n.style.color = "var(--muted)";
-          n.style.fontSize = "0.8rem";
-          wrap.appendChild(n);
-        } else {
-          for (const t of frameable) {
-            wrap.appendChild(button(t.username, () => send({ target: t.username })));
-          }
+        for (const t of frameable) {
+          wrap.appendChild(button(t.username, () => send({ target: t.username })));
         }
         break;
       }
@@ -1022,47 +983,35 @@ function renderPreRollCardButtons(
         wrap.appendChild(button(`Play ${card.name}`, () => send({})));
         break;
       case "firecrackers": {
-        const b = button(`Play ${card.name}`, () => send({}));
-        if (!inWhiteTower) {
-          b.disabled = true;
-          b.title = "Must be in the White Tower";
-        }
-        wrap.appendChild(b);
+        if (!inWhiteTower) break;
+        wrap.appendChild(button(`Play ${card.name}`, () => send({})));
         break;
       }
       case "binary_disruption": {
-        const b = button(`Play ${card.name}`, () => send({}));
-        if (alreadyArmed) {
-          b.disabled = true;
-          b.title = "Already armed";
-        }
-        wrap.appendChild(b);
+        if (alreadyArmed) break;
+        wrap.appendChild(button(`Play ${card.name}`, () => send({})));
         break;
       }
       case "lasso": {
+        const targets = lassoTargets(state, g, me);
+        if (targets.length === 0) break;
         const label = document.createElement("span");
         label.textContent = `${card.name} →`;
         label.style.fontSize = "0.85rem";
         wrap.appendChild(label);
-        const targets = lassoTargets(state, g, me);
-        if (targets.length === 0) {
-          const n = document.createElement("span");
-          n.textContent = "no targets in range";
-          n.style.color = "var(--muted)";
-          n.style.fontSize = "0.8rem";
-          wrap.appendChild(n);
-        } else {
-          for (const t of targets) {
-            wrap.appendChild(button(t.username, () => send({ target: t.username })));
-          }
+        for (const t of targets) {
+          wrap.appendChild(button(t.username, () => send({ target: t.username })));
         }
         break;
       }
     }
 
-    cardsRow.appendChild(wrap);
+    // Nothing playable about this card right now — drop the whole row, label
+    // and all, rather than leaving a stub with no button on it.
+    if (wrap.querySelector("button")) cardsRow.appendChild(wrap);
   }
 
+  if (!cardsRow.querySelector("button")) return;
   pending.appendChild(section);
 }
 
@@ -1100,6 +1049,28 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement("button");
   b.textContent = label;
   b.addEventListener("click", onClick);
+  return b;
+}
+
+/**
+ * A button that names a board square, and lights that square up while pointed at.
+ *
+ * Several squares share a name — there are two benches, and a list reading
+ * "Bench, Bench" tells you nothing about which is which. Rather than inventing
+ * disambiguating labels, point at the board: hovering (or tabbing to) the
+ * button flashes the square it refers to.
+ */
+function spaceButton(spaceId: string, label: string, onClick: () => void): HTMLButtonElement {
+  const b = button(label, onClick);
+  const on = () => highlightSpace(spaceId);
+  const off = () => highlightSpace(null);
+  b.addEventListener("mouseenter", on);
+  b.addEventListener("mouseleave", off);
+  b.addEventListener("focus", on);
+  b.addEventListener("blur", off);
+  // Clicking commits the move and re-renders the panel; the button goes away
+  // without ever firing mouseleave, stranding the highlight on the board.
+  b.addEventListener("click", off);
   return b;
 }
 

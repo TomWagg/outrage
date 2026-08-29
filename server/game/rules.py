@@ -156,6 +156,49 @@ def _warder_blocked_spaces(state: GameState, board: "Board") -> set[str]:
     return {w.location for w in state.warders if w.location != barracks}
 
 
+def immune_to_forced_moves(board: "Board", player: PlayerState) -> bool:
+    """True when nothing another player does may shift this piece.
+
+    Two sources: the square itself (``immune_to_forced_moves`` in the board
+    file) and the White Tower as a whole, which you walk out of under your own
+    steam or not at all. A split 7, a Lasso or a raven card that shoves a piece
+    around must all consult this — the White Tower is forward-only, so a forced
+    step inside it either goes nowhere legal or dumps the victim onto the Rack
+    Sender, which is exactly the way a released prisoner used to get re-racked.
+    """
+    space = board.space(player.position)
+    if space.immune_to_forced_moves:
+        return True
+    return space.region == "white_tower" and bool(
+        getattr(board.data.rules, "white_tower_immune_to_forced_moves", True)
+    )
+
+
+def _release_from_rack(
+    state: GameState, player: PlayerState, board: "Board",
+) -> list[dict[str, Any]]:
+    """Unlock the Rack and step the player out of the cell.
+
+    Serving the sentence used to clear the status and leave the piece sitting
+    on the Rack itself. That is not a square you can be left standing on: it is
+    a dead end whose only exit is the Rack Sender, so the freed player was
+    still one forced step away from being sent straight back down. Walk them
+    out as part of the release.
+    """
+    player.status = Status.NORMAL
+    player.status_turns_remaining = 0
+    evs = [_ev("rack_expired", player=player.username)]
+    exit_space = board.rack_exit_space
+    if exit_space and player.position == board.data.rack_space:
+        src = player.position
+        player.position = exit_space
+        evs.append(_ev(
+            "player_moved", player=player.username,
+            src=src, dst=exit_space, move_kind="rack_release",
+        ))
+    return evs
+
+
 # Phases that own the table: something is waiting on a decision (or the game is
 # finished), so nothing else may reset the phase to TURN_END underneath them.
 _SUB_PHASES = (
@@ -511,8 +554,7 @@ def _intent_roll_dice(state, payload, *, board, rng):
             # No escape by rolling. Decrement timer.
             player.status_turns_remaining = max(0, player.status_turns_remaining - 1)
             if player.status_turns_remaining == 0:
-                player.status = Status.NORMAL
-                evs.append(_ev("rack_expired", player=player.username))
+                evs.extend(_release_from_rack(state, player, board))
             state.phase = Phase.TURN_END
             _log(state, evs)
             return state, evs
@@ -630,6 +672,12 @@ def _split_movable_targets(
         # "imprisoned" on some unrelated square, which is how confinement was
         # being laundered into a free teleport.
         if p.confined:
+            continue
+        # Nor may the roll reach into the White Tower (or any square the board
+        # marks immune). Inside, movement is forward-only along a fixed chain,
+        # so a "free" step for the roller is a shove down the queue for the
+        # victim — one square past the jewels sits the Rack Sender.
+        if immune_to_forced_moves(board, p):
             continue
         others = [q.position for q in state.players if q.username != p.username and not q.escaped]
         legs = [
@@ -1976,13 +2024,12 @@ def _intent_end_turn(state, payload, *, board, rng):
                 # sit on the Rack forever by never pressing Roll.
                 ender.status_turns_remaining = max(0, ender.status_turns_remaining - 1)
                 if ender.status_turns_remaining == 0:
-                    was_racked = ender.status == Status.RACKED
-                    ender.status = Status.NORMAL
-                    ev = _ev(
-                        "rack_expired" if was_racked else "confinement_expired",
-                        player=ender.username,
-                    )
-                    _log(state, [ev])
+                    if ender.status == Status.RACKED:
+                        release_evs = _release_from_rack(state, ender, board)
+                    else:
+                        ender.status = Status.NORMAL
+                        release_evs = [_ev("confinement_expired", player=ender.username)]
+                    _log(state, release_evs)
         except KeyError:
             pass
     # Extra turns queued by Tower Pass / Clerk's Tea / etc.
@@ -2050,13 +2097,20 @@ def _intent_end_turn(state, payload, *, board, rng):
         _log(state, fc_events)
         return state, fc_events + [_ev("game_over", winner=state.winner)]
     # Slow mode: game is over if only one non-escaped player remains, or if
-    # every jewel has been claimed (nothing left in the White Tower or loose
-    # on the board).
+    # every jewel is *banked* — out of the White Tower, off the floor, and
+    # carried out of the Cradle Tower by a player who has already escaped.
+    #
+    # A jewel in the pocket of somebody still walking the board is not banked:
+    # they can be beaten in combat and robbed of it, and until they reach the
+    # exit nothing about the standings is settled. Ending the game the moment
+    # the last jewel left its plinth handed the win to whoever grabbed it and
+    # denied everyone else the fight for it.
     if state.mode == "slow":
         remaining = [p for p in state.players if not p.escaped]
         jewels_out = (
             len(state.jewels_available) == 0
             and sum(len(v) for v in state.loose_jewels.values()) == 0
+            and not any(p.jewels for p in remaining)
         )
         if len(remaining) <= 1 or jewels_out:
             state.phase = Phase.GAME_OVER
@@ -2086,8 +2140,7 @@ def _intent_end_turn(state, payload, *, board, rng):
                 turns_remaining=racked.status_turns_remaining,
             ))
             if racked.status_turns_remaining == 0:
-                racked.status = Status.NORMAL
-                skip_evs.append(_ev("rack_expired", player=racked.username))
+                skip_evs.extend(_release_from_rack(state, racked, board))
             for offset in range(1, len(state.turn_order) + 1):
                 idx = (state.current_turn_index + offset) % len(state.turn_order)
                 if not state.player(state.turn_order[idx]).escaped:

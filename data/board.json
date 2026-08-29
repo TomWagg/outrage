@@ -1895,8 +1895,7 @@
       ],
       "white_tower_order": 18,
       "neighbors": [
-        "wt_14_11",
-        "iw_13_13"
+        "wt_14_11"
       ],
       "immune_to_forced_moves": true,
       "_note": "Landing here sends player to the Rack (iw_rack). Reusable built-in rope connects to iw_13_13 (see traversal_edges)."
@@ -1978,8 +1977,7 @@
         ]
       ],
       "neighbors": [
-        "iw_14_4",
-        "iw_16_4"
+        "iw_14_4"
       ],
       "immune_to_forced_moves": true,
       "_note": "Reachable from wt_14_8 (exit of White Tower path) and from iw_16_4 via built-in ladder (not discarded). Note: iw_14_4 sits inside the White Tower envelope and is not a walkable iw cell \u2014 see open question about whether the chapel has a second ground-level entrance."
@@ -3049,7 +3047,6 @@
       ],
       "neighbors": [
         "iw_13_14",
-        "wt_13_11_rack_sender",
         "post_waterloo"
       ]
     },
@@ -3860,6 +3857,7 @@
   "escape_space": "out_18_m3_cradle_escape",
   "devereux_space": "ww56_devereux",
   "rack_space": "iw_rack",
+  "rack_exit_space": "wt_13_11_rack_sender",
   "bloody_tower_space": "iw_bloody_tower",
   "beauchamp_tower_space": "ww62_beauchamp",
   "bowyer_tower_space": "ww47_bowyer",

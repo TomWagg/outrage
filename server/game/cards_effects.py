@@ -200,7 +200,13 @@ def _royal_pardon(state, player, params, *, board, rng, **kw):
 def _rack_pardon(state, player, params, *, board, rng, **kw):
     if player.status == Status.RACKED:
         _clear_confinement(player)
-        return state, [_event("pardoned", player=player.username, pardon_kind="rack")]
+        evs = [_event("pardoned", player=player.username, pardon_kind="rack")]
+        # Walk them out of the cell as well — the Rack is a dead end and being
+        # left standing on it is one forced step from being sent back down.
+        exit_space = board.rack_exit_space
+        if exit_space and player.position == board.data.rack_space:
+            evs.extend(_send_to(state, player, exit_space, board))
+        return state, evs
     raise EffectError("Rack Pardon only works for the Rack")
 
 
@@ -286,6 +292,9 @@ def _lasso(state, player, params, *, board, rng, **kw):
         raise EffectError("Cannot Lasso yourself")
     if target.confined:
         raise EffectError(f"{target_name} is locked up and cannot be moved")
+    from .rules import immune_to_forced_moves as _immune
+    if _immune(board, target):
+        raise EffectError(f"{target_name} cannot be dragged out of there")
     if player.confined:
         raise EffectError("You cannot throw a Lasso while locked up")
     dist_map = board.reachable_within(player.position, 5)

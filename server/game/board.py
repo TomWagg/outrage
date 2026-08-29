@@ -50,6 +50,24 @@ class Board:
                 self._neighbors.setdefault(te.src, set()).add(te.to)
             if te.direction in ("bidirectional", "backward"):
                 self._neighbors.setdefault(te.to, set()).add(te.src)
+        # ...and the card-gated ones must not be reachable by accident. The
+        # board file lists them twice — once in ``traversal_edges`` and once,
+        # historically, in the ``neighbors`` array of the squares they join —
+        # and the second listing makes them free to everybody. That is how a
+        # player released from the Rack was offered the far side of the rope
+        # with an empty hand. Strip them here so a re-added neighbour entry
+        # can't quietly reopen the shortcut.
+        for te in data.traversal_edges:
+            if not te.requires_card:
+                continue
+            for a, b in ((te.src, te.to), (te.to, te.src)):
+                if b in self._neighbors.get(a, ()):
+                    log.warning(
+                        "Traversal edge %s is card-gated (%s) but %s lists %s as a "
+                        "plain neighbour; dropping the free edge",
+                        te.id or f"{te.src}->{te.to}", te.requires_card, a, b,
+                    )
+                    self._neighbors[a].discard(b)
         # Wall-walk order cycle.
         walk = [s for s in data.spaces if s.region == "wall_walk" and s.wall_walk_order is not None]
         walk.sort(key=lambda s: s.wall_walk_order or 0)
@@ -98,6 +116,24 @@ class Board:
 
     def neighbors(self, space_id: str) -> set[str]:
         return self._neighbors.get(space_id, set())
+
+    @property
+    def rack_exit_space(self) -> Optional[str]:
+        """The square a released prisoner steps out onto.
+
+        Serving the sentence unlocks the door; it does not leave you standing
+        in the cell. The Rack is a dead end with exactly one way out, so the
+        board file need not spell it out — but ``rack_exit_space`` overrides
+        the derivation if a board ever gives the Rack more than one neighbour.
+        """
+        explicit = self.data.rack_exit_space
+        if explicit:
+            return explicit
+        rack = self.data.rack_space
+        if not rack:
+            return None
+        nbrs = sorted(self._neighbors.get(rack, ()))
+        return nbrs[0] if nbrs else None
 
     def wall_walk_order_of(self, space_id: str) -> Optional[int]:
         sp = self._by_id.get(space_id)

@@ -100,6 +100,35 @@ export function hideBoardTooltip(): void {
   }
 }
 
+// The square the viewer is currently hovering in the controls panel. Naming a
+// destination ("Bench", "Bench") is not enough to tell two of them apart, so
+// pointing at one in the list lights it up on the board.
+let _hoverSpaceId: string | null = null;
+
+/**
+ * Temporarily fill a board square, or pass ``null`` to clear.
+ *
+ * Applied straight to the live DOM rather than by re-rendering: the renderer
+ * rebuilds the whole SVG on every update, and a hover is far too cheap to be
+ * worth that. ``renderBoard`` re-applies the current hover at the end of its
+ * build so a snapshot arriving mid-hover doesn't drop the highlight.
+ */
+export function highlightSpace(spaceId: string | null): void {
+  if (_hoverSpaceId === spaceId) return;
+  _hoverSpaceId = spaceId;
+  applyHoverHighlight();
+}
+
+function applyHoverHighlight(): void {
+  // Restore from data-base-fill rather than remembering what we overwrote:
+  // the element may have been replaced by a re-render since we painted it.
+  for (const el of document.querySelectorAll<SVGRectElement>("rect[data-base-fill]")) {
+    const base = el.getAttribute("data-base-fill")!;
+    el.style.fill =
+      el.getAttribute("data-space-id") === _hoverSpaceId ? "var(--sq-hover)" : base;
+  }
+}
+
 // Fill colours keyed by space kind. Anything not listed falls back to a
 // region-based default.
 // Values use CSS custom properties so the user can override them in main.css.
@@ -413,6 +442,8 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     });
     // CSS variables only work via the style property, not SVG presentation attrs.
     el.style.fill = fill;
+    // Remembered so the hover highlight has something to restore to.
+    el.setAttribute("data-base-fill", fill);
     el.style.cursor = "pointer";
     if (imChoosing && dests && sp.id in dests) {
       // Orange for your own movement, purple for "send the target here".
@@ -972,6 +1003,9 @@ function mountBoard(container: HTMLElement, svg: SVGElement): void {
   applyZoom(container);
   viewport.scrollLeft = scrollLeft;
   viewport.scrollTop = scrollTop;
+  // The squares we just painted are new elements, so a hover that survived the
+  // rebuild has to be re-applied to them.
+  applyHoverHighlight();
 }
 
 function buildZoomBar(container: HTMLElement): HTMLElement {

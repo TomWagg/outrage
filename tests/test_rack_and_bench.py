@@ -160,3 +160,68 @@ def test_royal_armouries_hands_out_a_tower_card_and_costs_nothing():
     assert "tower_card_drawn" in kinds_of(evs)
     assert len(player.hand) == 1
     assert not player.miss_next_turn
+
+
+# ---------------------------------------------------------------------------
+# Leaving the Rack
+# ---------------------------------------------------------------------------
+
+
+def _two_player_state(a: PlayerState, b: PlayerState) -> GameState:
+    s = GameState(mode="fast", players=[a, b],
+                  turn_order=[a.username, b.username], current_turn_index=0)
+    s.phase = Phase.TURN_END
+    s.turn = TurnContext()
+    _GLOBAL_RNG.set(Rng(seed=3))
+    return s
+
+
+def test_serving_the_sentence_steps_out_of_the_rack():
+    """The Rack is a dead end. Clearing the status without moving the piece
+    left the freed player still sitting in the cell — and one forced step from
+    being sent straight back down."""
+    a = PlayerState(username="p1", color="red", position="ww00_start")
+    b = PlayerState(username="p2", color="blue", position=BOARD.data.rack_space,
+                    status=Status.RACKED, status_turns_remaining=1)
+    state = _two_player_state(a, b)
+    rng = Rng(seed=3)
+    _GLOBAL_RNG.set(rng)
+
+    state, _ = apply(state, "end_turn", {"username": "p1"}, board=BOARD, rng=rng)
+
+    freed = state.player("p2")
+    assert freed.status == Status.NORMAL
+    assert freed.position == BOARD.rack_exit_space == RACK_SENDER
+
+
+def test_a_split_seven_cannot_reach_a_player_in_the_white_tower():
+    """Everything inside the White Tower is immune to being shoved about.
+
+    A player released onto the Rack Sender was being pushed one square by
+    somebody else's seven, which walked them back onto the sender and racked
+    them a second time.
+    """
+    from server.game.rules import _split_movable_targets
+
+    roller = PlayerState(username="p1", color="red", position="ww00_start")
+    victim = PlayerState(username="p2", color="blue", position=RACK_SENDER)
+    state = _two_player_state(roller, victim)
+
+    assert _split_movable_targets(state, BOARD, roller, 7) == {}
+
+
+def test_the_rack_exit_does_not_hand_out_the_rope_route():
+    """The Rack Sender reaches (13,13) only by rope. It was also listed as a
+    plain neighbour, so a freed player with an empty hand was offered the far
+    side of it."""
+    from server.game.movement import compute_destinations
+
+    player = PlayerState(username="p1", color="red", position=RACK_SENDER)
+    opts = compute_destinations(BOARD, RACK_SENDER, 6, player,
+                                visited_this_turn=[RACK_SENDER])
+
+    assert "iw_13_13" not in opts.destinations
+    # ...and no route sneaks across it on the way somewhere else. The only way
+    # out of the White Tower on foot is forward, through the Chapel of St John.
+    assert all("iw_13_13" not in path for path in opts.destinations.values())
+    assert set(opts.destinations) == {"iw_14_4"}

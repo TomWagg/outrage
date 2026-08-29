@@ -196,7 +196,9 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
         ? " (moved by another player's seven)"
         : p.move_kind === "firecrackers_rack"
           ? " (dragged off by the guards)"
-          : "";
+          : p.move_kind === "rack_release"
+            ? " (walking out of the Rack)"
+            : "";
       return `${p.player} moves from ${at(p.src)} to ${at(p.dst)}${how}.`;
     }
     case "sent_to_space":
