@@ -174,6 +174,38 @@ def immune_to_forced_moves(board: "Board", player: PlayerState) -> bool:
     )
 
 
+def can_fight(
+    state: GameState, board: "Board", attacker: PlayerState, defender: PlayerState,
+    space_id: Optional[str] = None,
+) -> bool:
+    """Could ``attacker`` actually start a fight with ``defender`` here?
+
+    The single answer to that question, so the move planner, the landing
+    resolver and the combat intent can't disagree. They used to: a destination
+    was tagged ``[fight]`` for any opponent on the path, which let a player stop
+    short on someone inside the White Tower — where combat is forbidden — purely
+    to dodge the square they would otherwise have landed on. The fight never
+    happened; the dodge did.
+
+    ``space_id`` defaults to where the defender is standing; the move planner
+    passes the square the attacker would stop on, which is the same thing.
+    """
+    if attacker.username == defender.username:
+        return False
+    where = space_id or defender.position
+    # No fighting in the White Tower, whatever anybody's paperwork says.
+    if board.space(where).region == "white_tower":
+        return False
+    # Both sides have to be signed in — an unaccredited piece is a tourist.
+    if not attacker.accredited or not defender.accredited:
+        return False
+    # And you need something to fight with. Declaring a fight bare-handed is a
+    # guaranteed loss dressed up as a choice.
+    if not any(c.category == "weapon" for c in attacker.hand):
+        return False
+    return True
+
+
 def cancel_rest_if_moved_off(
     state: GameState, board: "Board", player: PlayerState, old_space: str,
 ) -> list[dict[str, Any]]:
@@ -404,6 +436,9 @@ POST_MOVE_PLAYABLE_EFFECTS = frozenset({
     "royal_pardon",
     "rack_pardon",
     "traversal_beauchamp_escape",
+    # A Disguise walks you out of prison, and landing on the Bloody Tower is
+    # the commonest way into one — so it has to be playable after the move.
+    "disguise",
 })
 
 
@@ -417,6 +452,7 @@ SELF_RESCUE_EFFECTS = frozenset({
     "rack_pardon",
     "royal_pardon",
     "traversal_beauchamp_escape",
+    "disguise",
 })
 
 #: Phases in which no card may be played at all: the game isn't running, or a
@@ -722,7 +758,13 @@ def _split_movable_targets(
 
 
 def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, steps: int) -> list[dict[str, Any]]:
-    others = [p.position for p in state.players if p.username != player.username]
+    # ``other_player_positions`` exists purely to offer "stop here and fight"
+    # destinations, so it must only list opponents this player could really
+    # take on. Anyone else is walked past like scenery.
+    others = [
+        p.position for p in state.players
+        if p.username != player.username and can_fight(state, board, player, p)
+    ]
     # Seed the visited-this-turn list with the player's current position on
     # first use so the pathfinder excludes it consistently.
     if not state.turn.visited_this_turn:
@@ -866,7 +908,10 @@ def _resolve_landing(
     if space.kind == "jewel":
         jewel = state.jewel_at_space(space.id)
         if jewel is not None:
-            state.turn.pending_jewel = PendingJewelAttempt(jewel_id=jewel, space_id=space.id, source="landing")
+            state.turn.pending_jewel = PendingJewelAttempt(
+                jewel_id=jewel, space_id=space.id, player=player.username,
+                source="landing",
+            )
             state.phase = Phase.JEWEL_ATTEMPT
             evs.append(_ev("jewel_attempt_offered", jewel=jewel, space=space.id))
             return evs
@@ -945,6 +990,7 @@ def _resolve_landing(
         co_located = [
             p.username for p in state.players
             if p.username != player.username and p.position == player.position
+            and can_fight(state, board, player, p)
         ]
         if co_located:
             evs.append(_ev(
@@ -1373,35 +1419,6 @@ def _resolve_pending_raven(
     return evs
 
 
-def _raven_needs_input(ek: str, params: dict, state: GameState, board: Board, player: PlayerState) -> bool:
-    if ek == "go_to_location":
-        # Always: a Summons can be refused (at the cost of your next turn).
-        return True
-    if ek == "call_warder_to_post" and params.get("post") == "chooser":
-        # Only worth asking if there's a warder to call *and* somewhere free
-        # to call them to.
-        from .cards_effects import free_warder_posts
-        if (any(w.location == board.data.barracks_space for w in state.warders)
-                and len(free_warder_posts(state, board)) > 1):
-            return True
-    if ek == "return_warder_to_barracks":
-        out = [w for w in state.warders if w.location != board.data.barracks_space]
-        if len(out) > 1:
-            return True
-    if ek == "rest_on_bench" and len(board.data.bench_space_ids) > 1:
-        return True
-    if ek == "photo_with_warder":
-        occupied = [w.location for w in state.warders if w.location != board.data.barracks_space]
-        candidates: set[str] = set()
-        for ps in occupied:
-            candidates.update(board.neighbors(ps))
-        if len(candidates) > 1:
-            return True
-    if ek == "stopped_and_searched" and player.jewels:
-        return True
-    return False
-
-
 # =========================================================================
 # Choose move path
 # =========================================================================
@@ -1773,13 +1790,19 @@ def _intent_initiate_combat(state, payload, *, board, rng):
     target = state.player(target_name)
     if target.position != player.position:
         raise RuleError("Target must be on your space")
-    # White Tower check takes priority — forbidden regardless of accreditation.
+    # Ordered so the message names the reason the player is most likely to be
+    # able to do something about. ``can_fight`` is the authority; these checks
+    # only exist to say *why*.
     if board.space(player.position).region == "white_tower":
         raise RuleError("No combat inside the White Tower")
     if not player.accredited:
         raise RuleError("You must be accredited to initiate combat")
     if not target.accredited:
         raise RuleError("You cannot attack an unaccredited player")
+    if not any(c.category == "weapon" for c in player.hand):
+        raise RuleError("You need a weapon to start a fight")
+    if not can_fight(state, board, player, target):
+        raise RuleError("You cannot fight them here")
     combat_mod.begin(state, username, target_name, player.position)
     state.phase = Phase.COMBAT
     evs = [_ev("combat_started", attacker=username, defender=target_name, space=player.position)]
@@ -1952,14 +1975,25 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
     # JEWEL_ATTEMPT phase on them at turn start.
     _require_phase(state, Phase.JEWEL_ATTEMPT, Phase.TURN_START, Phase.PRE_ROLL)
     username = payload["username"]
-    player = _require_current_player(state, username)
     pj = state.turn.pending_jewel
-    if pj is None:
+    if pj is not None:
+        # The attempt belongs to whoever was put on the jewel, which is not
+        # always the player whose turn it is — a split 7 can shove an opponent
+        # onto one, and the roller was being handed their theft.
+        owner = pj.player or state.current_player().username
+        if username != owner:
+            raise RuleError(f"That jewel attempt belongs to {owner}")
+        player = state.player(username)
+    else:
+        # No parked attempt: this is the re-try by a thief still standing on the
+        # jewel they failed last turn, so it has to be their own turn.
+        player = _require_current_player(state, username)
         standing_on = state.jewel_at_space(player.position)
         if standing_on is None:
             raise RuleError("No pending jewel attempt")
         pj = PendingJewelAttempt(
-            jewel_id=standing_on, space_id=player.position, source="landing",
+            jewel_id=standing_on, space_id=player.position,
+            player=player.username, source="landing",
         )
         state.turn.pending_jewel = pj
     # Optional subset of burglary tool card ids to play.
@@ -1974,6 +2008,16 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
     roll = rng.roll_dice(2)
     threshold = 12 - total_val
     success = sum(roll) >= threshold
+    # A double is a double whatever you rolled it for: it buys another turn,
+    # for the thief rather than for whoever's turn it happens to be. Deliberately
+    # not fed into ``consecutive_doubles`` — the three-doubles trip to the Bloody
+    # Tower is about a piece charging round the board, not about picking a lock.
+    doubled = roll[0] == roll[1]
+    if doubled:
+        if player.username == state.current_player().username:
+            state.turn.extra_turns_queued += 1
+        else:
+            player.extra_turns_pending += 1
     # Burglary tools are always re-usable — they stay in hand whether the
     # attempt succeeds or fails.
     evs: list[dict[str, Any]] = [_ev(
@@ -1983,8 +2027,11 @@ def _intent_attempt_jewel(state, payload, *, board, rng):
         roll=roll,
         threshold=threshold,
         success=success,
+        doubled=doubled,
         tools=[c.id for c in tools],
     )]
+    if doubled:
+        evs.append(_ev("extra_turn_queued", player=player.username))
     if success:
         state.jewels_available.pop(pj.jewel_id, None)
         player.jewels.append(pj.jewel_id)

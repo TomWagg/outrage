@@ -394,7 +394,8 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
       // Tools are committed face-up, so we can show them to everyone.
       return `${p.player} attempts ${jewel(p.jewel)}: rolls ${sum(p.roll)} ` +
         `against a threshold of ${p.threshold} — ` +
-        (p.success ? "success." : "and fails.");
+        (p.success ? "success." : "and fails.") +
+        (p.doubled ? " A double, so they go again." : "");
     case "jewel_attempt_retry_available":
       return `${p.player} remains beside ${jewel(p.jewel) || "the jewel"} and may ` +
         `try again next turn.`;
@@ -449,7 +450,9 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
     case "disguise_played":
       return p.via === "move"
         ? `${p.player} puts on a Disguise and slips past the Yeoman Warder.`
-        : `${p.player} puts on a Disguise.`;
+        : p.via === "prison"
+          ? `${p.player} puts on a Disguise and walks straight out of prison.`
+          : `${p.player} puts on a Disguise.`;
     case "escaped_beauchamp":
       return `${p.player} escapes the Beauchamp Tower by rope.`;
     case "framed":

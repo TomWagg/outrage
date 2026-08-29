@@ -149,6 +149,10 @@ def _tower_pass(state, player, params, *, board, rng, **kw):
     """
     mode = params.get("mode", "extra_turn")
     if mode == "accredit":
+        if player.accredited:
+            # Nothing to buy. The button used to be offered regardless and
+            # burned the card for no effect.
+            raise EffectError("You are already accredited")
         if player.position != board.data.queens_house_space:
             raise EffectError("Tower Pass accredit requires being at Queen's House")
         player.accredited = True
@@ -179,11 +183,19 @@ def _sanctuary(state, player, params, *, board, rng, **kw):
 
 @register("disguise")
 def _disguise(state, player, params, *, board, rng, **kw):
-    """Grant passage past Yeoman Warder posts for the rest of this turn.
+    """Walk out of prison, or slip past a Yeoman Warder post.
 
-    Sets ``turn.disguise_used`` so movement blocking is lifted; the card is
-    already removed from the player's hand by the pre-roll intent handler.
+    Two uses, and which one you get is never a real choice: a player locked in
+    the Bloody or Beauchamp Tower cannot move at all, so free passage past a
+    post is worth nothing to them and the card must be the way out. Only prison
+    — the Rack and the Bowyer Tower's questioning both hold you regardless.
+
+    Otherwise it sets ``turn.disguise_used`` and movement blocking is lifted;
+    the card is already removed from hand by the pre-roll intent handler.
     """
+    if player.status == Status.IMPRISONED:
+        _clear_confinement(player)
+        return state, [_event("disguise_played", player=player.username, via="prison")]
     state.turn.disguise_used = True
     return state, [_event("disguise_played", player=player.username)]
 
@@ -364,13 +376,16 @@ def _go_to_location(state, player, params, *, board, rng, **kw):
         return state, [_event(
             "raven_needs_input",
             input_kind="choose_location" if player_choice else "summons",
+            choices=board.tower_card_spaces() if player_choice else None,
         )]
     loc = _location_from_params(params, board)
     if loc is None:
-        # Resolve from chosen parameter.
+        # Resolve from chosen parameter. "Any tower you like" means a tower —
+        # any square that deals you a tower card — not any square on the board.
         loc = params.get("chosen")
-        if loc is None or not board.has_space(loc):
-            raise EffectError(f"Unknown chosen location: {loc}")
+        allowed = board.tower_card_spaces()
+        if loc is None or loc not in allowed:
+            raise EffectError(f"The Summons only reaches a tower, not {loc!r}")
     return state, _summon_to(state, player, loc, board)
 
 
@@ -383,7 +398,10 @@ def _go_to_jewel_view(state, player, params, *, board, rng, **kw):
         return state, [_event("jewel_already_taken", jewel=jewel_id)]
     space_id = state.jewels_available[jewel_id]
     evs = _send_to(state, player, space_id, board)
-    state.turn.pending_jewel = PendingJewelAttempt(jewel_id=jewel_id, space_id=space_id, source="raven_view")
+    state.turn.pending_jewel = PendingJewelAttempt(
+        jewel_id=jewel_id, space_id=space_id, player=player.username,
+        source="raven_view",
+    )
     evs.append(_event("jewel_attempt_offered", jewel=jewel_id))
     return state, evs
 
@@ -496,16 +514,39 @@ def _photo(state, player, params, *, board, rng, **kw):
     return state, _summon_to(state, player, chosen, board)
 
 
+def _disguise_in_hand(player: PlayerState) -> Optional[Card]:
+    return next(
+        (c for c in player.hand if c.kind == "tower" and c.effect_key == "disguise"),
+        None,
+    )
+
+
 @register("stopped_and_searched")
 def _stopped(state, player, params, *, board, rng, **kw):
     if not player.jewels:
         return state, [_event("stopped_and_searched", player=player.username, carried_jewels=0)]
-    # Requires either playing a Disguise or forfeit.
-    play_disguise = params.get("play_disguise", False)
+
+    # Carrying a jewel, so there is a decision to make: show a Disguise, or
+    # forfeit. Park for input until they answer. Without this the card resolved
+    # itself the instant it was turned over and confiscated everything, and the
+    # Disguise in the victim's hand was never asked for.
+    play_disguise = params.get("play_disguise")
+    if play_disguise is None:
+        return state, [_event(
+            "raven_needs_input", input_kind="stopped_and_searched",
+            carried_jewels=len(player.jewels),
+            has_disguise=_disguise_in_hand(player) is not None,
+        )]
+
     if play_disguise:
-        # Rule engine should have already consumed the Disguise card before
-        # dispatching (we just emit an event).
-        return state, [_event("disguise_shown", player=player.username)]
+        # Spend it here. Nothing upstream was consuming the card, so a Disguise
+        # played against a search used to be free.
+        card = _disguise_in_hand(player)
+        if card is None:
+            raise EffectError("You have no Disguise to show")
+        player.remove_card(card.id)
+        state.tower_discard.append(card)
+        return state, [_event("disguise_shown", player=player.username, card=card.id)]
     # Forfeit all jewels + weapons, go to Bloody Tower (sent).
     dropped_jewels = list(player.jewels)
     player.jewels = []

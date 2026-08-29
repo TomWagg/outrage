@@ -198,3 +198,46 @@ def test_the_targets_leg_survives_the_rollers_raven_card():
 
     assert game.player("bob").position == "ww06"
     assert game.turn.deferred_split_leg is None
+
+
+def test_a_search_landed_on_by_someone_elses_seven_is_still_the_victims_to_answer():
+    """The scenario that surfaced this: a split-7 leg shoved a jewel-carrying
+    player onto a raven square, the search resolved itself on reveal, and the
+    Disguise in their hand was never asked for."""
+    game, dest = _setup()
+    bob = game.player("bob")
+    bob.jewels = ["sword"]
+    bob.hand = [Card(id="tc-disguise", kind="tower", category="utility",
+                     name="Disguise", value=0, effect_key="disguise")]
+    game.raven_draw = [Card(id="raven:search:1", kind="raven", name="search",
+                            effect_key="stopped_and_searched")]
+    rng = Rng(seed=2)
+    _GLOBAL_RNG.set(rng)
+
+    game, _ = apply(
+        game, "assign_split_seven",
+        {"username": "alice", "n_self": 6, "n_other": 1, "target": "bob",
+         "target_destination": dest},
+        board=BOARD, rng=rng,
+    )
+    game, evs = apply(game, "reveal_raven_notice", {"username": "bob"},
+                      board=BOARD, rng=rng)
+
+    # Parked for bob's answer rather than confiscating everything on the spot.
+    assert "raven_needs_input" in [e["kind"] for e in evs]
+    assert game.phase == Phase.RAVEN_EFFECT
+    assert game.player("bob").jewels == ["sword"]
+
+    # And alice cannot answer it for him.
+    with pytest.raises(RuleError):
+        apply(game, "resolve_raven_effect",
+              {"username": "alice", "params": {"play_disguise": False}},
+              board=BOARD, rng=rng)
+
+    game, evs = apply(game, "resolve_raven_effect",
+                      {"username": "bob", "params": {"play_disguise": True}},
+                      board=BOARD, rng=rng)
+
+    assert "disguise_shown" in [e["kind"] for e in evs]
+    assert game.player("bob").jewels == ["sword"]
+    assert game.player("bob").hand == []

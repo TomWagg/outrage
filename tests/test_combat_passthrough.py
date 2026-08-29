@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from server.game.board import Board
+from server.game.cards import Card
 from server.game.rng import Rng
 from server.game.rules import RuleError, _GLOBAL_RNG, apply
 from server.game.state import (
@@ -25,13 +26,26 @@ from server.game.state import (
 BOARD = Board.from_file(Path(__file__).resolve().parent.parent / "data" / "board.json")
 
 
-def _state(alice_pos: str, bob_pos: str, alice_accredited: bool = True) -> GameState:
+def dagger(owner: str) -> Card:
+    return Card(id=f"w-{owner}", kind="tower", category="weapon", name="Dagger", value=3)
+
+
+def _state(
+    alice_pos: str, bob_pos: str, alice_accredited: bool = True,
+    alice_armed: bool = True,
+) -> GameState:
+    # Both sides carry a weapon by default: an unarmed player can't start a
+    # fight at all, so without one these tests would be exercising the refusal
+    # rather than the pass-through rule.
+    alice = PlayerState(username="alice", color="red", position=alice_pos,
+                        accredited=alice_accredited)
+    if alice_armed:
+        alice.hand = [dagger("alice")]
+    bob = PlayerState(username="bob", color="blue", position=bob_pos,
+                      accredited=True, hand=[dagger("bob")])
     s = GameState(
         mode="fast",
-        players=[
-            PlayerState(username="alice", color="red", position=alice_pos, accredited=alice_accredited),
-            PlayerState(username="bob", color="blue", position=bob_pos, accredited=True),
-        ],
+        players=[alice, bob],
         turn_order=["alice", "bob"],
         current_turn_index=0,
         seed=1,
@@ -125,3 +139,47 @@ def test_no_combat_inside_white_tower():
             {"username": "alice", "target": "bob"},
             board=BOARD, rng=rng,
         )
+
+
+def test_an_unarmed_player_cannot_start_a_fight():
+    """Declaring combat bare-handed is a guaranteed loss dressed up as a
+    choice — the engine refuses it."""
+    game = _state("ww05", "ww05", alice_armed=False)
+    rng = Rng(seed=1)
+    _GLOBAL_RNG.set(rng)
+    game.phase = Phase.TURN_END
+    with pytest.raises(RuleError, match="weapon"):
+        apply(game, "initiate_combat", {"username": "alice", "target": "bob"},
+              board=BOARD, rng=rng)
+
+
+def test_an_unarmed_player_is_not_offered_a_stop_at_an_enemy():
+    """No weapon, no fight — so the enemy's square stops being a destination
+    and the move is walked in full."""
+    from server.game.rules import _enter_movement_phase
+
+    game = _state("ww00_start", "ww05", alice_armed=False)
+    _GLOBAL_RNG.set(Rng(seed=0))
+    game.phase = Phase.MOVING
+    _enter_movement_phase(game, BOARD, game.players[0], 7)
+
+    dests = set((game.turn.pending_move.destinations if game.turn.pending_move else {}))
+    assert "ww05" not in dests
+
+
+def test_no_stop_offered_at_an_enemy_inside_the_white_tower():
+    """Combat is forbidden in the White Tower, so stopping short on somebody
+    standing there is not a real choice — it was only ever a way to dodge the
+    square you would otherwise have landed on."""
+    from server.game.rules import _enter_movement_phase
+
+    # wt_12_11 is one square before the Rack Sender on the White Tower chain.
+    game = _state("wt_11_10_crown_ste", "wt_12_11")
+    _GLOBAL_RNG.set(Rng(seed=0))
+    game.phase = Phase.MOVING
+    _enter_movement_phase(game, BOARD, game.players[0], 3)
+
+    dests = set((game.turn.pending_move.destinations if game.turn.pending_move else {}))
+    assert "wt_12_11" not in dests
+    # Walked in full: three steps lands on the Rack Sender, like it or not.
+    assert dests == {"wt_13_11_rack_sender"} or game.phase == Phase.TURN_END

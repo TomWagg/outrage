@@ -197,3 +197,20 @@ def test_no_unexpected_unhandled_action_keys():
         if "unhandled_space_action" in kinds_of(evs):
             unhandled.append((sp.id, sp.action.key))
     assert {key for _, key in unhandled} == KNOWN_UNIMPLEMENTED, unhandled
+
+
+def test_tower_pass_will_not_accredit_an_already_accredited_player():
+    """The button was offered regardless and burned the card for nothing."""
+    import pytest
+
+    from server.game.cards_effects import EffectError, dispatch
+
+    player = PlayerState(username="p1", color="red",
+                         position=BOARD.data.queens_house_space, accredited=True)
+    state = GameState(mode="fast", players=[player], turn_order=["p1"])
+    state.phase = Phase.TURN_START
+    state.turn = TurnContext()
+
+    with pytest.raises(EffectError, match="already accredited"):
+        dispatch("tower_pass", state, player, {"mode": "accredit"},
+                 board=BOARD, rng=Rng(seed=1))

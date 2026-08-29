@@ -117,6 +117,24 @@ class Board:
     def neighbors(self, space_id: str) -> set[str]:
         return self._neighbors.get(space_id, set())
 
+    def tower_card_spaces(self) -> list[str]:
+        """Every space that hands out a tower card when you land on it.
+
+        The Summons that reads "go to any tower" is scoped to these: the Towers
+        proper plus the Devereux, the Museum and the Royal Armouries, less the
+        Broad Arrow Tower, which surrenders your weapons instead of dealing you
+        a card. Driven off the same board rules the landing resolver uses, so
+        the two can't drift.
+        """
+        kinds = set(getattr(self.data.rules, "tower_card_draw_kinds", []) or ["tower"])
+        exceptions = set(
+            getattr(self.data.rules, "tower_card_draw_exception_space_ids", []) or []
+        )
+        return [
+            s.id for s in self.data.spaces
+            if s.kind in kinds and s.id not in exceptions
+        ]
+
     @property
     def rack_exit_space(self) -> Optional[str]:
         """The square a released prisoner steps out onto.

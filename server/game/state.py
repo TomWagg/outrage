@@ -165,12 +165,18 @@ class PendingRavenEffect(BaseModel):
 
 
 class PendingJewelAttempt(BaseModel):
-    """Player must choose which burglary cards to play before we roll."""
+    """Player must choose which burglary cards to play before we roll.
+
+    ``player`` is who gets the attempt, which is not always whose turn it is: a
+    split 7 can shove an opponent onto a jewel, or onto a raven square whose
+    card walks them to one. The prompt — and the jewel — belong to them.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     jewel_id: JewelId
     space_id: str
+    player: str = ""
     source: Literal["landing", "raven_view"] = "landing"
 
 

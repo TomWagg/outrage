@@ -142,10 +142,32 @@ def test_effects_needing_input_wait_for_it_after_the_reveal():
     assert state.phase == Phase.RAVEN_EFFECT
 
     state, _ = apply(state, "resolve_raven_effect",
-                     {"username": "p1", "params": {"chosen": "ww05"}},
+                     {"username": "p1", "params": {"chosen": "ww23_salt"}},
                      board=BOARD, rng=Rng(seed=5))
-    assert state.players[0].position == "ww05"
+    assert state.players[0].position == "ww23_salt"
     assert state.turn.pending_raven is None
+
+
+def test_the_summons_only_reaches_a_tower():
+    """"Go to any tower" means a tower — anywhere that deals you a tower card —
+    not any square on the board."""
+    state, player = make_state()
+    state.raven_draw = [Card(id="raven:choose:2", kind="raven", name="choose",
+                             effect_key="go_to_location",
+                             params={"location": "player_choice"})]
+    _resolve_landing(state, BOARD, player)
+    apply(state, "reveal_raven_notice", {"username": "p1"},
+          board=BOARD, rng=Rng(seed=5))
+    start = state.players[0].position
+
+    state, evs = apply(state, "resolve_raven_effect",
+                       {"username": "p1", "params": {"chosen": "ww05"}},
+                       board=BOARD, rng=Rng(seed=5))
+
+    assert "raven_effect_failed" in [e["kind"] for e in evs]
+    assert state.players[0].position == start
+    assert set(BOARD.tower_card_spaces()) >= {"ww23_salt", "iw_museum"}
+    assert "ww05" not in BOARD.tower_card_spaces()
 
 
 def test_a_face_down_card_cannot_be_dismissed():

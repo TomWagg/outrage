@@ -151,10 +151,19 @@ export interface TurnContext {
   cards_played_this_turn: string[];
   pending_move: PendingMove | null;
   pending_raven: PendingRavenEffect | null;
-  pending_jewel: Record<string, unknown> | null;
+  pending_jewel: PendingJewelAttempt | null;
   pending_split: PendingSplitSeven | null;
   pending_card_change: PendingCardChange | null;
   binary_disruption_armed?: boolean;
+}
+
+export interface PendingJewelAttempt {
+  jewel_id: string;
+  space_id: string;
+  /** Whose attempt it is — not always whose turn it is, since a split 7 can
+   *  shove an opponent onto a jewel. */
+  player: string;
+  source: "landing" | "raven_view";
 }
 
 export interface GameSnapshot {

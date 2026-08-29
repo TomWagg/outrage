@@ -151,6 +151,13 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       renderRavenEffect(pending, row, state, ws);
       return;
     }
+    // Same again for a theft: a split-7 leg can shove you onto a jewel, or onto
+    // a raven square whose card walks you to one. The attempt is yours. Without
+    // this the roller was offered it — and took the jewel.
+    if (g.phase === "JEWEL_ATTEMPT" && g.turn.pending_jewel?.player === you) {
+      renderJewelAttempt(pending, row, me, you, ws);
+      return;
+    }
     pending.textContent = cur ? `Waiting for ${cur}…` : "";
     // A locked-up player may still buy their way out while somebody else is
     // acting. This is the only window a racked player has at all — their own
@@ -164,11 +171,18 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   // If we share a square with any other player we may declare combat —
   // except inside the White Tower, where combat is forbidden.
   if (me && ["TURN_START", "PRE_ROLL", "TURN_END"].includes(g.phase)) {
+    // Mirrors ``can_fight`` on the server: not in the White Tower, both sides
+    // signed in, and something to fight with. Offering the button without all
+    // three only produced a rejected intent.
     const mySpace = state.board?.spaces.find((s) => s.id === me.position);
-    const inWhiteTower = mySpace?.region === "white_tower";
-    const coLocated = g.players.filter((p) => p.username !== you && p.position === me.position);
-    // No fighting inside the White Tower, so there is nothing to offer there.
-    for (const enemy of inWhiteTower ? [] : coLocated) {
+    const canFightAtAll =
+      mySpace?.region !== "white_tower" &&
+      me.accredited &&
+      me.hand.some((c) => c.category === "weapon");
+    const coLocated = canFightAtAll
+      ? g.players.filter((p) => p.username !== you && p.position === me.position && p.accredited)
+      : [];
+    for (const enemy of coLocated) {
       row.appendChild(button(`Attack ${enemy.username}`, () =>
         ws.send("initiate_combat", { username: you, target: enemy.username }).catch(noop),
       ));
@@ -312,24 +326,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
     }
 
     case "JEWEL_ATTEMPT": {
-      // Offer a simple "attempt with all burglary tools" button for the skeleton.
-      const tools = (me?.hand ?? []).filter((c) => c.category === "burglary");
-      const bonus = tools.reduce((a, c) => a + (c.value ?? 0), 0);
-      pending.innerHTML =
-        `<div>Jewel attempt: ${tools.length} burglary tool(s) available (total +${bonus}).</div>` +
-        `<div style="margin-top:0.25rem">Roll ${Math.max(2, 12 - bonus)}+ on two dice. ` +
-        `Tools are never used up, and a failed attempt leaves you on the jewel — ` +
-        `you can try again next turn.</div>`;
-      row.appendChild(
-        button("Attempt with all tools", () =>
-          ws.send("attempt_jewel", { username: you, tool_card_ids: tools.map((c) => c.id) }).catch(noop),
-        ),
-      );
-      row.appendChild(
-        button("Attempt without tools", () =>
-          ws.send("attempt_jewel", { username: you, tool_card_ids: [] }).catch(noop),
-        ),
-      );
+      renderJewelAttempt(pending, row, me, you, ws);
       break;
     }
 
@@ -355,6 +352,40 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       renderPreRollCardButtons(pending, g, me, you, state, ws, POST_MOVE_PLAYABLE_EFFECTS);
       break;
   }
+}
+
+/**
+ * The "attempt the jewel" panel.
+ *
+ * Rendered for whoever the pending attempt names, which is not always the
+ * player whose turn it is.
+ */
+function renderJewelAttempt(
+  pending: HTMLElement,
+  row: HTMLElement,
+  me: import("../state.js").GamePlayer | null,
+  you: string | null,
+  ws: WsClient,
+): void {
+  const tools = (me?.hand ?? []).filter((c) => c.category === "burglary");
+  const bonus = tools.reduce((a, c) => a + (c.value ?? 0), 0);
+  pending.innerHTML =
+    `<div>Jewel attempt: ${tools.length} burglary tool(s) available (total +${bonus}).</div>` +
+    `<div style="margin-top:0.25rem">Roll ${Math.max(2, 12 - bonus)}+ on two dice. ` +
+    `Tools are never used up, and a failed attempt leaves you on the jewel — ` +
+    `you can try again next turn. Roll a double and you take another turn.</div>`;
+  if (tools.length) {
+    row.appendChild(
+      button("Attempt with all tools", () =>
+        ws.send("attempt_jewel", { username: you, tool_card_ids: tools.map((c) => c.id) }).catch(noop),
+      ),
+    );
+  }
+  row.appendChild(
+    button(tools.length ? "Attempt without tools" : "Attempt the theft", () =>
+      ws.send("attempt_jewel", { username: you, tool_card_ids: [] }).catch(noop),
+    ),
+  );
 }
 
 /**
@@ -690,24 +721,17 @@ function renderRavenEffect(
         `<div>Raven — <strong>Summons</strong> to ${escapeHtml(destLabel)}.</div>` +
         `<div style="margin-top:0.25rem">Obey it, or refuse and miss your next turn.</div>`;
       if (anywhere) {
-        const sel = document.createElement("select");
-        sel.style.marginTop = "0.4rem";
-        const placeholder = document.createElement("option");
-        placeholder.value = "";
-        placeholder.textContent = "—";
-        sel.appendChild(placeholder);
-        const spaces = [...(state.board?.spaces ?? [])].sort((a, b) => a.label.localeCompare(b.label));
-        for (const s of spaces) {
-          const o = document.createElement("option");
-          o.value = s.id;
-          o.textContent = s.label || s.id;
-          sel.appendChild(o);
+        // "Any tower you like" means a tower — the squares that deal you a
+        // tower card — not any square on the board, which is what the old
+        // dropdown offered (and the server used to accept).
+        const towers = towerSpaces(state);
+        if (towers.length === 0) {
+          pending.innerHTML += `<div style="margin-top:0.25rem">No tower to go to.</div>`;
         }
-        pending.appendChild(sel);
-        row.appendChild(button("Go", () => {
-          if (!sel.value) return;
-          sendResolve({ accept: true, chosen: sel.value });
-        }));
+        for (const t of towers) {
+          row.appendChild(spaceButton(t.id, t.label, () =>
+            sendResolve({ accept: true, chosen: t.id })));
+        }
       } else {
         row.appendChild(button("Obey the summons", () => sendResolve({ accept: true })));
       }
@@ -804,19 +828,22 @@ function renderRavenEffect(
     }
 
     case "stopped_and_searched": {
+      // Match on effect_key, not the printed name: the server spends the card
+      // by effect, so a rename would have left this offering a button the
+      // server then refused.
       const me = g.players.find((p) => p.username === you);
-      const hasDisguise = !!me?.hand.some((c) => c.name?.toLowerCase() === "disguise");
+      const hasDisguise = !!me?.hand.some((c) => c.effect_key === "disguise");
       pending.innerHTML = `
         <div>Raven — Stopped and Searched.</div>
         <div style="margin-top:0.25rem">
-          You are carrying a jewel. Play a <strong>Disguise</strong> or forfeit all
-          jewels + weapons and go to the Bloody Tower.
+          You are carrying a jewel. Show a <strong>Disguise</strong> — it is spent —
+          or forfeit every jewel and weapon and go to the Bloody Tower.
         </div>
       `;
       // With no Disguise in hand there is no choice to make, so don't dangle
       // one — the forfeit is the only button.
       if (hasDisguise) {
-        row.appendChild(button("Play Disguise", () => sendResolve({ play_disguise: true })));
+        row.appendChild(button("Show a Disguise", () => sendResolve({ play_disguise: true })));
       }
       row.appendChild(button("Forfeit (go to Bloody Tower)", () => sendResolve({ play_disguise: false })));
       break;
@@ -830,6 +857,25 @@ function renderRavenEffect(
       row.appendChild(button("Dismiss", () => sendResolve({})));
       break;
   }
+}
+
+/**
+ * The squares a Summons can send you to: everywhere that deals a tower card.
+ *
+ * Read off the same board rules the server uses (``tower_card_draw_kinds`` and
+ * its exception list) so the two can't drift apart.
+ */
+function towerSpaces(state: ClientState): { id: string; label: string }[] {
+  const rules = (state.board?.rules ?? {}) as {
+    tower_card_draw_kinds?: string[];
+    tower_card_draw_exception_space_ids?: string[];
+  };
+  const kinds = new Set(rules.tower_card_draw_kinds ?? ["tower"]);
+  const skip = new Set(rules.tower_card_draw_exception_space_ids ?? []);
+  return (state.board?.spaces ?? [])
+    .filter((s) => kinds.has(s.kind) && !skip.has(s.id))
+    .map((s) => ({ id: s.id, label: s.label || s.id }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function labelFor(state: ClientState, spaceId: string): string {
@@ -872,6 +918,7 @@ const SELF_RESCUE_EFFECTS = new Set([
   "royal_pardon",
   "rack_pardon",
   "traversal_beauchamp_escape",
+  "disguise",
 ]);
 
 // Mirrors POST_MOVE_PLAYABLE_EFFECTS in server/game/rules.py: what's still
@@ -884,6 +931,7 @@ const POST_MOVE_PLAYABLE_EFFECTS = new Set([
   "royal_pardon",
   "rack_pardon",
   "traversal_beauchamp_escape",
+  "disguise",
 ]);
 
 function renderPreRollCardButtons(
@@ -960,7 +1008,11 @@ function renderPreRollCardButtons(
         label.textContent = `${card.name}:`;
         label.style.fontSize = "0.85rem";
         wrap.appendChild(label);
-        if (atQueens) wrap.appendChild(button("Accredit", () => send({ mode: "accredit" })));
+        // Nothing to buy if the clerks have already signed you in — the
+        // button used to be offered anyway and burned the card for nothing.
+        if (atQueens && !me.accredited) {
+          wrap.appendChild(button("Accredit", () => send({ mode: "accredit" })));
+        }
         wrap.appendChild(button("Extra turn", () => send({ mode: "extra_turn" })));
         break;
       }
@@ -997,9 +1049,19 @@ function renderPreRollCardButtons(
         }
         break;
       }
-      case "disguise":
-        wrap.appendChild(button(`Play ${card.name}`, () => send({})));
+      case "disguise": {
+        // Two uses, and which one you get is decided by where you are: a
+        // prisoner cannot move, so free passage past a post is worth nothing
+        // to them and the card is their way out instead. It answers prison
+        // only, so to anyone held on the Rack or under questioning it does
+        // nothing at all.
+        if (status === "IMPRISONED") {
+          wrap.appendChild(button(`Walk out of prison with the ${card.name}`, () => send({})));
+        } else if (!confined) {
+          wrap.appendChild(button(`Play ${card.name}`, () => send({})));
+        }
         break;
+      }
       case "firecrackers": {
         if (!inWhiteTower) break;
         wrap.appendChild(button(`Play ${card.name}`, () => send({})));
