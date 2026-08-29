@@ -121,20 +121,17 @@ def _update_stats_from_events(state: AppState, events: list[dict]) -> None:
             if loser:
                 state.stats.get(loser).combat_losses += 1
 
-        elif kind in ("fast_win", "slow_escaped"):
+        elif kind == "fast_win":
             username = p.get("player")
             if username:
                 state.stats.get(username).wins += 1
 
         elif kind == "slow_game_over":
-            # slow_escaped handles individual escapes; slow_game_over fires for
-            # the last-remaining or jewels-exhausted ending — award the win to
-            # whoever the engine declared as winner.
+            # One win per game, credited to whoever the engine declared. This
+            # used to also fire per-escape, so a slow game could pay out more
+            # wins than it had players.
             winner = p.get("winner")
-            if winner and not any(
-                e["kind"] == "slow_escaped" and e.get("payload", {}).get("player") == winner
-                for e in events
-            ):
+            if winner:
                 state.stats.get(winner).wins += 1
 
         elif kind in ("rack_coin_lost", "rack_hand_lost", "firecrackers_racked"):

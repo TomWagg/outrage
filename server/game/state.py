@@ -90,7 +90,11 @@ class PlayerState(BaseModel):
     # reaches them, so they get the bonus on their own turn, not the roller's.
     extra_turns_pending: int = 0
     connected: bool = True
-    escaped: bool = False  # slow mode: player is out but game continues
+    #: Jewels carried out through the Cradle Tower and stashed in the hideout.
+    #: Safe forever — no fight or pickpocket can touch them — and the only
+    #: jewels that score. ``jewels`` above is what is still in your pockets and
+    #: still at risk. Using the exit moves the one list into the other.
+    banked_jewels: list[JewelId] = Field(default_factory=list)
 
     # --- derived ----------------------------------------------------------
 
@@ -408,7 +412,6 @@ class GameState(BaseModel):
 
     # Win results
     winner: Optional[str] = None
-    finished_slow_order: list[str] = Field(default_factory=list)
     # Filled in once, when the game ends. Sent in the snapshot so a player who
     # reconnects to a finished game still sees the full result.
     final_stats: dict[str, GameStats] = Field(default_factory=dict)
@@ -427,7 +430,7 @@ class GameState(BaseModel):
         return self.player(self.turn_order[self.current_turn_index])
 
     def player_at(self, space_id: str) -> list[PlayerState]:
-        return [p for p in self.players if p.position == space_id and not p.escaped]
+        return [p for p in self.players if p.position == space_id]
 
     def jewel_at_space(self, space_id: str) -> Optional[JewelId]:
         for jid, sid in self.jewels_available.items():

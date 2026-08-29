@@ -166,7 +166,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   if (me && ["TURN_START", "PRE_ROLL", "TURN_END"].includes(g.phase)) {
     const mySpace = state.board?.spaces.find((s) => s.id === me.position);
     const inWhiteTower = mySpace?.region === "white_tower";
-    const coLocated = g.players.filter((p) => p.username !== you && !p.escaped && p.position === me.position);
+    const coLocated = g.players.filter((p) => p.username !== you && p.position === me.position);
     // No fighting inside the White Tower, so there is nothing to offer there.
     for (const enemy of inWhiteTower ? [] : coLocated) {
       row.appendChild(button(`Attack ${enemy.username}`, () =>
@@ -268,13 +268,18 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
         // Which destinations land on an enemy? (pass-through combat stops.)
         const enemyAt = new Map<string, string>();
         for (const p of g.players) {
-          if (p.username !== you && !p.escaped) enemyAt.set(p.position, p.username);
+          if (p.username !== you) enemyAt.set(p.position, p.username);
         }
         const combatStops = keys.filter((k) => enemyAt.has(k));
         // Routes the server will charge a Disguise for. They're offered
         // alongside the free ones precisely so the card can be held back until
         // the roll is known to be big enough to be worth spending it on.
         const needsDisguise = new Set(pm?.requires_disguise ?? []);
+        // The Cradle Tower is not an ordinary square to a coin-holder: landing
+        // on it banks your jewels but costs you the coin and your whole hand,
+        // and there is no taking it back. Say so before they click.
+        const exitId = state.board?.escape_space ?? null;
+        const exitOffered = !!exitId && keys.includes(exitId) && !!me?.has_coin;
         pending.innerHTML =
           `<div>Click a highlighted square (${keys.length} option${keys.length === 1 ? "" : "s"}) or pick here:</div>` +
           (combatStops.length
@@ -285,11 +290,20 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
             ? `<div style="margin-top:0.25rem;color:var(--accent);font-size:0.8rem">` +
               `Destinations marked <strong>[uses Disguise]</strong> slip past a Yeoman Warder ` +
               `and spend the card. Dashed outline on the board.</div>`
+            : "") +
+          (exitOffered
+            ? `<div style="margin-top:0.25rem;color:var(--accent);font-size:0.8rem">` +
+              `<strong>[bank &amp; restart]</strong> banks ` +
+              `${me!.jewels.length ? `your ${me!.jewels.length} jewel${me!.jewels.length === 1 ? "" : "s"}` : "nothing"} ` +
+              `for good, then takes your coin and all ${me!.hand.length} of your cards. ` +
+              `You are dealt a fresh hand and start again from the Start square, still accredited.</div>`
             : "");
         for (const d of keys) {
           const enemy = enemyAt.get(d);
+          const isExit = exitOffered && d === exitId;
           const tags =
-            (enemy ? "[fight] " : "") + (needsDisguise.has(d) ? "[uses Disguise] " : "");
+            (enemy ? "[fight] " : "") + (needsDisguise.has(d) ? "[uses Disguise] " : "") +
+            (isExit ? "[bank & restart] " : "");
           const label = `${tags}${named(state, d)}${enemy ? ` (vs ${enemy})` : ""}`;
           row.appendChild(spaceButton(d, label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
@@ -580,7 +594,7 @@ function renderSplitSeven(
       return;
     }
     const eligible = g.players.filter(
-      (p) => p.username !== you && !p.escaped && (movable[p.username] ?? []).includes(nother),
+      (p) => p.username !== you && (movable[p.username] ?? []).includes(nother),
     );
     // With exactly one player this leg could move there is nothing to decide,
     // so fill it in and lock the picker rather than making the roller confirm
@@ -603,7 +617,7 @@ function renderSplitSeven(
     if (forced) selTarget.value = eligible[0].username;
     else if (eligible.some((p) => p.username === previous)) selTarget.value = previous;
     const stuck = g.players.filter(
-      (p) => p.username !== you && !p.escaped && !(movable[p.username] ?? []).length,
+      (p) => p.username !== you && !(movable[p.username] ?? []).length,
     );
     note.textContent = stuck.length
       ? `${stuck.map((p) => p.username).join(", ")} can't be moved at all this roll.`
@@ -914,11 +928,15 @@ function renderPreRollCardButtons(
   const confined = status === "IMPRISONED" || status === "TORTURED" || status === "RACKED";
   const atBeauchamp = state.board && me.position === state.board.beauchamp_tower_space;
   // Confession swaps you with someone who is walking free — you can't hand your
-  // sentence to a player already behind a different door.
+  // sentence to a player already behind a different door, nor reach into the
+  // White Tower, which nothing may drag a player out of.
+  const whiteTowerSpaces = new Set(
+    (state.board?.spaces ?? []).filter((s) => s.region === "white_tower").map((s) => s.id),
+  );
   const frameable = g.players.filter(
     (p) =>
       p.username !== you &&
-      !p.escaped &&
+      !whiteTowerSpaces.has(p.position) &&
       !["IMPRISONED", "TORTURED", "RACKED"].includes(p.status),
   );
 
@@ -1041,7 +1059,7 @@ function lassoTargets(
     frontier = next;
   }
   return g.players.filter(
-    (p) => p.username !== me.username && !p.escaped && visited.has(p.position),
+    (p) => p.username !== me.username && visited.has(p.position),
   );
 }
 

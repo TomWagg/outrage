@@ -22,6 +22,9 @@ def _player(pos: str, **kw) -> PlayerState:
 
 
 def _dests(pos: str, steps: int, **kw):
+    # A coin is the price of the door, and only a coin-holder gets the
+    # overshoot courtesy — so these reach tests carry one unless they say not.
+    kw.setdefault("has_coin", True)
     p = _player(pos, **kw)
     return compute_destinations(BOARD, pos, steps, p, visited_this_turn=[pos]).destinations
 
@@ -42,9 +45,17 @@ def test_exit_is_offered_from_further_back_once_the_roll_covers_it():
     assert EXIT in _dests("out_13_m3", 11)
 
 
-def test_exit_is_offered_without_a_jewel_or_coin():
-    """It's an ordinary square if you can't cash in; the engine decides on arrival."""
-    assert EXIT in _dests("out_17_m3", 6)
+def test_exit_is_offered_without_a_jewel():
+    """No jewel needed: walking out empty-handed to be dealt a new hand is a
+    legitimate play, so the door is offered to any coin-holder who reaches it."""
+    assert EXIT in _dests("out_17_m3", 6, jewels=[])
+
+
+def test_the_overshoot_courtesy_needs_a_coin():
+    """Without a coin the Cradle Tower is an ordinary square: you may stand on
+    it with an exact roll, but a big roll no longer stops you at the door."""
+    assert EXIT in _dests("out_17_m3", 1, has_coin=False)
+    assert EXIT not in _dests("out_17_m3", 6, has_coin=False)
 
 
 def test_reaching_the_exit_is_never_auto_committed():
@@ -57,7 +68,8 @@ def test_reaching_the_exit_is_never_auto_committed():
 
 def test_un_accredited_player_is_not_offered_the_exit():
     """The route runs through the wards, which are closed until they're signed in."""
-    p = PlayerState(username="a", color="red", position="ww05", accredited=False)
+    p = PlayerState(username="a", color="red", position="ww05", accredited=False,
+                    has_coin=True)
     opts = compute_destinations(BOARD, "ww05", 6, p, visited_this_turn=["ww05"])
     assert EXIT not in opts.destinations
 
@@ -99,15 +111,17 @@ def _apply(game, intent, payload):
 def test_walking_out_on_a_twelve_from_one_square_away_wins():
     game = _game(has_coin=True, jewels=["sword"])
     new, events = _apply(game, "choose_move_path", {"username": "a", "destination": EXIT})
-    assert new.player("a").escaped is True
+    a = new.player("a")
+    assert a.banked_jewels == ["sword"]
     assert new.winner == "a"
     assert "fast_win" in [e["kind"] for e in events]
 
 
-def test_stopping_on_the_exit_empty_handed_is_just_a_square():
+def test_stopping_on_the_exit_with_no_coin_is_just_a_square():
+    """The coin is the price of the door. Without one you are simply standing
+    on the last square of the south row."""
     game = _game(has_coin=False, jewels=[])
     new, events = _apply(game, "choose_move_path", {"username": "a", "destination": EXIT})
     assert new.player("a").position == EXIT
-    assert new.player("a").escaped is False
     assert new.winner is None
-    assert "fast_win" not in [e["kind"] for e in events]
+    assert "jewels_banked" not in [e["kind"] for e in events]

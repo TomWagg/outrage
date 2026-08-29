@@ -56,14 +56,17 @@ export interface GamePlayer {
   hand: Card[];        // own hand (empty array for opponents)
   hand_size: number;
   has_coin: boolean;
+  /** Jewels still in your pockets — stealable in a fight. */
   jewels: string[];
+  /** Jewels carried out through the Cradle Tower. Safe, and the only ones that
+   *  score. */
+  banked_jewels: string[];
   accredited: boolean;
   trying_accreditation: boolean;
   status: string;
   status_turns_remaining: number;
   miss_next_turn: boolean;
   connected: boolean;
-  escaped: boolean;
 }
 
 export interface PendingMove {
@@ -176,7 +179,6 @@ export interface GameSnapshot {
   winner: string | null;
   /** Per-player tallies for the results screen, filled in when the game ends. */
   final_stats?: Record<string, Record<string, number>>;
-  finished_slow_order: string[];
   firecrackers_affected?: string[];
   active_raven_notice?: RavenNotice | null;
   /** Red banner shown to the whole table when somebody is locked up. Only the

@@ -11,11 +11,14 @@ from server.game.board import Board
 from server.game.cards import Card
 from server.game.rng import Rng
 from server.game.rules import compute_game_stats, apply, _GLOBAL_RNG
-from server.game.state import GameState, LogEntry, Phase, PlayerState, TurnContext
+from server.game.state import (
+    GameState, LogEntry, PendingMove, Phase, PlayerState, TurnContext,
+)
 from server.net.redact import redact_game_for_player
 
 
 BOARD = Board.from_file(Path(__file__).resolve().parent.parent / "data" / "board.json")
+EXIT = "out_18_m3_cradle_escape"
 
 
 def make_state() -> GameState:
@@ -78,18 +81,30 @@ def test_stats_are_snapshotted_when_the_game_ends():
     s.mode = "slow"
     log(s, "turn_start", player="alice")
     log(s, "jewel_acquired", player="alice", jewel="sword")
-    # Alice is out with her haul; bob is the last one left, which ends a slow
-    # game on the next end_turn.
+    # Alice has two jewels in the hideout already and is one square from the
+    # Cradle Tower carrying a third. Banking it puts three of the five beyond
+    # anyone's reach, which ends a slow game on the spot.
     alice = s.player("alice")
-    alice.escaped = True
+    alice.position = "out_17_m3"
+    alice.accredited = True
+    alice.has_coin = True
+    alice.banked_jewels = ["orb", "sceptre"]
     alice.jewels = ["sword"]
-    s.current_turn_index = 1
-    s.phase = Phase.TURN_END
+    s.phase = Phase.CHOOSING_PATH
+    s.turn.visited_this_turn = ["out_17_m3"]
+    s.turn.pending_move = PendingMove(
+        steps=1, destinations={EXIT: ["out_17_m3", EXIT]},
+    )
 
-    s, evs = apply(s, "end_turn", {"username": "bob"}, board=BOARD, rng=Rng(seed=1))
+    s, evs = apply(s, "choose_move_path",
+                   {"username": "alice", "destination": EXIT},
+                   board=BOARD, rng=Rng(seed=1))
 
-    assert "slow_game_over" in [e["kind"] for e in evs]
+    kinds = [e["kind"] for e in evs]
+    assert "jewels_banked" in kinds
+    assert "slow_game_over" in kinds
     assert s.phase == Phase.GAME_OVER
+    assert s.winner == "alice"
     assert set(s.final_stats) == {"alice", "bob"}
     assert s.final_stats["alice"].jewels_collected == 1
     assert s.final_stats["alice"].turns_taken == 1
@@ -110,3 +125,19 @@ def test_hands_stay_hidden_until_the_game_is_over():
     bob_end = next(p for p in end["players"] if p["username"] == "bob")
     assert [c["id"] for c in bob_end["hand"]] == ["tc-1"]
     assert bob_end["hand_size"] == 1
+
+
+def test_snapshot_carries_the_hideout():
+    """The wire format the client reads: carried and banked jewels are separate
+    lists, and nobody is flagged as having left the game — using the exit puts
+    you back on the start square, not out of it."""
+    s = make_state()
+    s.player("alice").jewels = ["sword"]
+    s.player("alice").banked_jewels = ["orb", "sceptre"]
+
+    snap = redact_game_for_player(s, "alice")
+    alice = next(p for p in snap["players"] if p["username"] == "alice")
+
+    assert alice["jewels"] == ["sword"]
+    assert alice["banked_jewels"] == ["orb", "sceptre"]
+    assert "escaped" not in alice

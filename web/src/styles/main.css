@@ -872,6 +872,9 @@ input, select {
   margin-bottom: 0.7rem;
 }
 .gameover-jewel { line-height: 0; }
+/* A jewel still in a pocket when the game ended. It never left the Tower
+   and scores nothing, so it is shown faded and struck through. */
+.gameover-jewel.is-unbanked { opacity: 0.35; filter: grayscale(1); }
 .gameover-coin { line-height: 0; }
 .gameover-none { color: var(--muted); font-style: italic; font-size: 0.8rem; }
 

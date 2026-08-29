@@ -174,6 +174,32 @@ def immune_to_forced_moves(board: "Board", player: PlayerState) -> bool:
     )
 
 
+def cancel_rest_if_moved_off(
+    state: GameState, board: "Board", player: PlayerState, old_space: str,
+) -> list[dict[str, Any]]:
+    """A player dragged off a resting square stops resting.
+
+    The Shop, the benches and the Hospital cost you your next turn because you
+    are *there* — browsing, sitting, convalescing. Somebody else's seven or a
+    Lasso is allowed to haul you off the square, and when it does the errand
+    goes with it: the turn you owed is written off rather than following you
+    around the board.
+
+    Call this after moving the piece and *before* resolving the landing, or a
+    victim shoved from one bench onto another would have the fresh penalty
+    cancelled instead of the old one.
+    """
+    if not player.miss_next_turn or player.position == old_space:
+        return []
+    rest_kinds = set(getattr(board.data.rules, "miss_turn_on_landing_kinds", []) or [])
+    if board.space(old_space).kind not in rest_kinds:
+        return []
+    player.miss_next_turn = False
+    if player.status == Status.HOSPITAL:
+        player.status = Status.NORMAL
+    return [_ev("rest_interrupted", player=player.username, space=old_space)]
+
+
 def _release_from_rack(
     state: GameState, player: PlayerState, board: "Board",
 ) -> list[dict[str, Any]]:
@@ -666,7 +692,7 @@ def _split_movable_targets(
     blocked = _warder_blocked_spaces(state, board)
     movable: dict[str, list[int]] = {}
     for p in state.players:
-        if p.username == roller.username or p.escaped:
+        if p.username == roller.username:
             continue
         # A locked-up piece stays locked up. Moving it would leave the player
         # "imprisoned" on some unrelated square, which is how confinement was
@@ -679,7 +705,7 @@ def _split_movable_targets(
         # victim — one square past the jewels sits the Rack Sender.
         if immune_to_forced_moves(board, p):
             continue
-        others = [q.position for q in state.players if q.username != p.username and not q.escaped]
+        others = [q.position for q in state.players if q.username != p.username]
         legs = [
             n for n in range(1, total)
             if compute_destinations(
@@ -696,7 +722,7 @@ def _split_movable_targets(
 
 
 def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, steps: int) -> list[dict[str, Any]]:
-    others = [p.position for p in state.players if p.username != player.username and not p.escaped]
+    others = [p.position for p in state.players if p.username != player.username]
     # Seed the visited-this-turn list with the player's current position on
     # first use so the pathfinder excludes it consistently.
     if not state.turn.visited_this_turn:
@@ -726,16 +752,11 @@ def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, s
 
 def _commit_move(state: GameState, board: Board, player: PlayerState, dest: str, path: list[str]) -> list[dict[str, Any]]:
     old = player.position
-    # Escape rule: if the path crosses (or lands on) an escape space and the
-    # player has their jewels + coin, they escape — moving >= the number of
-    # steps needed to reach the escape square is enough (overshoot is OK).
-    if player.jewels and player.has_coin:
-        for sid in path[1:]:
-            if board.space(sid).kind == "escape":
-                idx = path.index(sid)
-                path = path[: idx + 1]
-                dest = sid
-                break
+    # The exit used to grab anyone who crossed it holding a jewel and a coin.
+    # It can't any more: cashing in costs you your whole hand, so walking past
+    # the door has to be allowed. ``compute_destinations`` offers the exit as a
+    # destination whenever a coin-holder can reach it — choosing it is the
+    # decision, and landing on it is what cashes you in.
     player.position = dest
     state.turn.pending_move = None
     # Record every newly-stepped-on square so subsequent movement this turn
@@ -767,12 +788,18 @@ def _resolve_landing(
     player: PlayerState,
     depth: int = 0,
     allow_raven: bool = True,
+    own_move: bool = True,
 ) -> list[dict[str, Any]]:
     """Trigger landing effects for the current space, updating the phase.
 
     ``depth`` counts teleports chained by space actions (land on "Go to Shop",
     resolve the Shop, ...). It guards against a board topology that could send
     a player round a cycle of teleporting squares forever.
+
+    ``own_move=False`` says somebody else put this player here — a split 7, a
+    Lasso, a card. The Cradle Tower is skipped in that case: cashing in costs
+    you your hand and can win you the game, so it has to be your own decision,
+    not a side effect of another player's roll.
     """
     evs: list[dict[str, Any]] = []
     space = board.space(player.position)
@@ -891,21 +918,14 @@ def _resolve_landing(
         if handled_terminal:
             return evs
 
-    # Escape in fast mode.
-    if space.kind == "escape" and state.mode == "fast":
-        if player.jewels and player.has_coin:
-            player.escaped = True
-            state.phase = Phase.GAME_OVER
-            state.winner = player.username
-            evs.append(_ev("fast_win", player=player.username))
-            return evs
-
-    # Escape in slow mode.
-    if space.kind == "escape" and state.mode == "slow":
-        if player.jewels and player.has_coin:
-            player.escaped = True
-            state.finished_slow_order.append(player.username)
-            evs.append(_ev("slow_escaped", player=player.username))
+    # The Cradle Tower. Costs a coin, not a jewel: walking out empty-handed to
+    # be dealt a fresh hand is a legitimate play, and the one way back from a
+    # Rack that took every card you had. Returns straight away — the player is
+    # standing on the start square now, so nothing else about this square
+    # (co-located enemies, least of all) still applies to them.
+    if space.kind == "escape" and player.has_coin and own_move:
+        evs.extend(_use_the_exit(state, board, player))
+        return evs
 
     # Bloody / Beauchamp / Bowyer / Rack landed on by normal movement:
     # "just visiting" unless the move was directed by an effect. Our landing
@@ -924,7 +944,7 @@ def _resolve_landing(
     if space.region != "white_tower":
         co_located = [
             p.username for p in state.players
-            if p.username != player.username and not p.escaped and p.position == player.position
+            if p.username != player.username and p.position == player.position
         ]
         if co_located:
             evs.append(_ev(
@@ -937,6 +957,114 @@ def _resolve_landing(
     if state.phase in (Phase.MOVING,):
         state.phase = Phase.TURN_END
     return evs
+
+
+def _use_the_exit(state: GameState, board: Board, player: PlayerState) -> list[dict[str, Any]]:
+    """Slip out through the Cradle Tower, bank the haul, and come back in.
+
+    Leaving the Tower is not the end of anybody's game. You hand over
+    everything you are carrying: the jewels go to a hideout where nothing can
+    reach them and where they finally count for something, the coin goes back
+    to the Devereux pile for somebody else to pick up, and the whole hand is
+    shuffled back into the tower deck. Then you are dealt a fresh opening hand
+    and put back on the start square — still accredited, because the clerks'
+    paperwork does not expire while you are out.
+
+    A coin is the whole price of admission. Going out with no jewels at all is
+    a real play: it is how a player stripped of their hand on the Rack gets a
+    new one.
+    """
+    banked = list(player.jewels)
+    player.banked_jewels.extend(banked)
+    player.jewels = []
+
+    if player.has_coin:
+        player.has_coin = False
+        state.coins_available = min(state.coins_total, state.coins_available + 1)
+
+    surrendered = player.hand
+    player.hand = []
+    if getattr(board.data.rules, "escape_reshuffles_old_hand_into_deck", True):
+        state.tower_draw.extend(surrendered)
+        try:
+            _GLOBAL_RNG.get().shuffle(state.tower_draw)
+        except RuntimeError:
+            # RNG not wired (a unit test calling in directly); leave the order.
+            pass
+    else:
+        state.tower_discard.extend(surrendered)
+
+    dealt = 0
+    for _ in range(_deal_size(state)):
+        card = _draw_tower(state)
+        if card is None:
+            break
+        player.add_card(card)
+        dealt += 1
+
+    player.position = board.data.start_space
+    state.turn.pending_move = None
+    evs = [_ev(
+        "jewels_banked", player=player.username, jewels=banked,
+        cards_surrendered=len(surrendered), cards_dealt=dealt,
+    )]
+    evs.extend(_check_jewel_endgame(state, board))
+    if state.phase != Phase.GAME_OVER:
+        state.phase = Phase.TURN_END
+    return evs
+
+
+def _deal_size(state: GameState) -> int:
+    """Opening hand size, and therefore the size of an escapee's new one."""
+    return DEAL_2_4 if len(state.players) <= 4 else DEAL_5_6
+
+
+def _jewels_in_play(board: Board) -> int:
+    """How many jewels the game is played for. Five on the real board."""
+    return len(board.data.initial_jewel_locations) or 5
+
+
+def _check_jewel_endgame(state: GameState, board: Board) -> list[dict[str, Any]]:
+    """End the game if the banked piles have settled it. Called after a bank.
+
+    Banking is the only thing that can move this needle, so this is the only
+    place it needs asking.
+
+    Fast: the first jewel anybody banks wins it.
+
+    Slow: the game runs until the lead is beyond reach. A player has clinched
+    when their banked pile beats what every rival could still reach even by
+    winning every remaining jewel — so with five in play, banking three ends
+    it, because two is all that is left for anyone else. Failing that, it ends
+    when there is nothing left to bank, and the ranking decides it.
+    """
+    total = _jewels_in_play(board)
+    banked = {p.username: len(p.banked_jewels) for p in state.players}
+
+    if state.mode == "fast":
+        winner = next((p.username for p in state.players if p.banked_jewels), None)
+        if winner is None:
+            return []
+        state.phase = Phase.GAME_OVER
+        state.winner = winner
+        return [_ev("fast_win", player=winner)]
+
+    unbanked = max(0, total - sum(banked.values()))
+    leader = max(banked, key=lambda u: (banked[u], u)) if banked else None
+    clinched = (
+        leader is not None
+        and all(banked[leader] > banked[u] + unbanked for u in banked if u != leader)
+    )
+    if not clinched and unbanked > 0:
+        return []
+
+    state.phase = Phase.GAME_OVER
+    ranking = _slow_ranking(state)
+    state.winner = ranking[0]["username"] if ranking else None
+    return [_ev(
+        "slow_game_over", winner=state.winner, ranking=ranking,
+        reason="majority_clinched" if clinched else "all_jewels_banked",
+    )]
 
 
 def _draw_tower(state: GameState) -> Optional[Card]:
@@ -1132,7 +1260,7 @@ def _dispatch_space_action(
         # and take a random one from their hand in exchange.
         candidates = [
             p.username for p in state.players
-            if p.username != player.username and not p.escaped and p.hand
+            if p.username != player.username and p.hand
         ]
         if not player.hand or not candidates:
             evs.append(_ev(
@@ -1301,6 +1429,7 @@ def _intent_choose_move_path(state, payload, *, board, rng):
         old_pos = target.position
         target.position = dest
         state.turn.pending_move = None
+        rest_evs = cancel_rest_if_moved_off(state, board, target, old_pos)
         # Clear CHOOSING_PATH now that the selection is committed; _resolve_landing
         # may override to RAVEN_EFFECT / JEWEL_ATTEMPT etc., and the guard below
         # will set TURN_END if nothing else grabs the phase.
@@ -1309,7 +1438,8 @@ def _intent_choose_move_path(state, payload, *, board, rng):
             "player_moved", player=target.username,
             src=old_pos, dst=dest, path=path, move_kind="split_seven",
         )]
-        evs.extend(_resolve_landing(state, board, target))
+        evs.extend(rest_evs)
+        evs.extend(_resolve_landing(state, board, target, own_move=False))
         # target_first: the roller's own leg comes next, but only if the
         # target's landing hasn't opened a prompt. If it has, park the steps —
         # answering the prompt picks them back up.
@@ -1488,7 +1618,7 @@ def _run_roller_split_leg(
     has already been resolved (e.g. ``leg_order='target_first'``).
     """
     evs: list[dict[str, Any]] = []
-    others = [p.position for p in state.players if p.username != player.username and not p.escaped]
+    others = [p.position for p in state.players if p.username != player.username]
     if not state.turn.visited_this_turn:
         state.turn.visited_this_turn = [player.position]
     opts = compute_destinations(
@@ -1575,7 +1705,7 @@ def _resolve_split_target_leg(
     if n_other <= 0 or target_name is None:
         return evs
     target = state.player(target_name)
-    others = [p.position for p in state.players if p.username != target.username and not p.escaped]
+    others = [p.position for p in state.players if p.username != target.username]
     # The no-revisit rule applies to the target's own movement this turn
     # too, but since the target was not the acting player, they have no
     # visited_this_turn trail — their current space is the only exclusion.
@@ -1622,8 +1752,9 @@ def _resolve_split_target_leg(
         "player_moved", player=target.username,
         src=old, dst=tdest, path=tpath, move_kind="split_seven",
     ))
+    evs.extend(cancel_rest_if_moved_off(state, board, target, old))
     # Resolve target's landing effect fully.
-    evs.extend(_resolve_landing(state, board, target))
+    evs.extend(_resolve_landing(state, board, target, own_move=False))
     return evs
 
 
@@ -2083,53 +2214,23 @@ def _intent_end_turn(state, payload, *, board, rng):
                 penalty=penalty, cards_discarded=lost,
             ))
 
-    # Advance to next connected, non-escaped player.
+    # Advance to the next player. Nobody ever leaves the table — using the exit
+    # puts you back on the start square rather than out of the game — so this
+    # is a plain rotation.
     n = len(state.turn_order)
-    for offset in range(1, n + 1):
-        idx = (state.current_turn_index + offset) % n
-        username = state.turn_order[idx]
-        p = state.player(username)
-        if not p.escaped:
-            state.current_turn_index = idx
-            break
-    else:
-        state.phase = Phase.GAME_OVER
-        _log(state, fc_events)
-        return state, fc_events + [_ev("game_over", winner=state.winner)]
-    # Slow mode: game is over if only one non-escaped player remains, or if
-    # every jewel is *banked* — out of the White Tower, off the floor, and
-    # carried out of the Cradle Tower by a player who has already escaped.
-    #
-    # A jewel in the pocket of somebody still walking the board is not banked:
-    # they can be beaten in combat and robbed of it, and until they reach the
-    # exit nothing about the standings is settled. Ending the game the moment
-    # the last jewel left its plinth handed the win to whoever grabbed it and
-    # denied everyone else the fight for it.
-    if state.mode == "slow":
-        remaining = [p for p in state.players if not p.escaped]
-        jewels_out = (
-            len(state.jewels_available) == 0
-            and sum(len(v) for v in state.loose_jewels.values()) == 0
-            and not any(p.jewels for p in remaining)
-        )
-        if len(remaining) <= 1 or jewels_out:
-            state.phase = Phase.GAME_OVER
-            ranking = _slow_ranking(state)
-            state.winner = ranking[0]["username"] if ranking else None
-            reason = "last_player" if len(remaining) <= 1 else "jewels_exhausted"
-            end_ev = _ev(
-                "slow_game_over", winner=state.winner,
-                ranking=ranking, reason=reason,
-            )
-            _log(state, fc_events + [end_ev])
-            return state, fc_events + [end_ev]
+    state.current_turn_index = (state.current_turn_index + 1) % n
+    # No end-of-game test here. The game is decided by what has been *banked*,
+    # and the only way to bank anything is to walk out of the Cradle Tower —
+    # so ``_use_the_exit`` asks the question at the one moment the answer can
+    # have changed. A jewel in somebody's pocket settles nothing: it can still
+    # be taken off them in a fight.
     # The Rack allows no action at all: no roll, no cards, no decision — rolling
     # doesn't even shorten the sentence early. So don't stop on a racked player
     # and make them press "End turn" to confirm they can't do anything; tick the
     # sentence and pass play straight on. Reaching zero releases them but still
     # costs them this turn, matching the roll-while-racked branch above.
     skip_evs: list[dict[str, Any]] = []
-    if any(p.status != Status.RACKED for p in state.players if not p.escaped):
+    if any(p.status != Status.RACKED for p in state.players):
         for _ in range(len(state.turn_order)):
             racked = state.current_player()
             if racked.status != Status.RACKED:
@@ -2141,11 +2242,8 @@ def _intent_end_turn(state, payload, *, board, rng):
             ))
             if racked.status_turns_remaining == 0:
                 skip_evs.extend(_release_from_rack(state, racked, board))
-            for offset in range(1, len(state.turn_order) + 1):
-                idx = (state.current_turn_index + offset) % len(state.turn_order)
-                if not state.player(state.turn_order[idx]).escaped:
-                    state.current_turn_index = idx
-                    break
+            state.current_turn_index = (
+                state.current_turn_index + 1) % len(state.turn_order)
 
     # Reset per-turn context.
     state.turn = state.turn.__class__()
@@ -2173,26 +2271,30 @@ JEWEL_VALUES = {
 
 
 def _slow_ranking(state: GameState) -> list[dict[str, Any]]:
-    """Return a sorted ranking of players for slow-mode end-of-game.
+    """Return a sorted ranking of players for the end of a slow game.
+
+    Scored on *banked* jewels only. A jewel still in somebody's pocket when the
+    game ends never left the Tower, and the whole point of the hideout is that
+    getting it out is the achievement.
 
     Sort order (each descending):
-      1. Jewel count
+      1. Banked jewel count
       2. Top jewel value (tie-break for same count)
       3. Sum of jewel values (further tie-break)
     With a final ascending username tie-break for determinism.
     """
     scored: list[tuple[int, int, int, str, dict[str, Any]]] = []
     for p in state.players:
-        count = len(p.jewels)
-        top = max((JEWEL_VALUES.get(j, 0) for j in p.jewels), default=0)
-        total = sum(JEWEL_VALUES.get(j, 0) for j in p.jewels)
+        count = len(p.banked_jewels)
+        top = max((JEWEL_VALUES.get(j, 0) for j in p.banked_jewels), default=0)
+        total = sum(JEWEL_VALUES.get(j, 0) for j in p.banked_jewels)
         scored.append((count, top, total, p.username, {
             "username": p.username,
             "jewel_count": count,
             "jewel_top_value": top,
             "jewel_total_value": total,
-            "jewels": list(p.jewels),
-            "escaped": p.escaped,
+            "jewels": list(p.banked_jewels),
+            "carrying": list(p.jewels),
         }))
     scored.sort(key=lambda r: (-r[0], -r[1], -r[2], r[3]))
     return [row[4] for row in scored]

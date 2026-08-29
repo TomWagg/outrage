@@ -423,7 +423,10 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
 
   // --- spaces ---
   const spaceLayer = createSVG("g", { "data-layer": "spaces" });
-  const NO_CIRCLE_KINDS = new Set(["raven_trigger", "chapel_royal", "chapel_st_john", "museum", "royal_armouries", "hospital", "warder_post", "bench", "rack", "bloody_tower"]);
+  const NO_CIRCLE_KINDS = new Set(["raven_trigger", "chapel_royal", "chapel_st_john", "museum", "royal_armouries", "hospital", "warder_post", "bench", "rack", "bloody_tower", "escape"]);
+  // Regions whose plain squares draw a raven card, and so mark the ones that
+  // don't with a circle.
+  const CIRCLE_REGIONS = new Set(["inner_ward", "exterior_south"]);
   for (const sp of board.spaces) {
     const rect = spaceRect(sp, toPx);
     if (!rect) continue;
@@ -485,9 +488,12 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     } else {
       spaceLayer.appendChild(el);
     }
-    // Draw a small circle inside inner-ward non-raven squares. On the physical
-    // board, circles distinguish "safe" inner-ward squares from raven-trigger ones.
-    if (sp.region === "inner_ward" && !NO_CIRCLE_KINDS.has(sp.kind)) {
+    // Draw a small circle inside the non-raven squares of the raven-drawing
+    // regions. On the physical board, circles distinguish "safe" squares from
+    // raven-trigger ones — and the exterior south row is white squares like the
+    // inner ward, so it is circled the same way. (The wall walk draws no raven
+    // cards at all, so it carries no circles.)
+    if (CIRCLE_REGIONS.has(sp.region) && !NO_CIRCLE_KINDS.has(sp.kind)) {
       const r = Math.min(rect.w, rect.h) * 0.28;
       const dot = createSVG("circle", {
         cx: String(rect.x + rect.w / 2),
@@ -869,7 +875,6 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     // Group players by position for neat stacking.
     const byPos = new Map<string, typeof game.players>();
     for (const p of game.players) {
-      if (p.escaped) continue;
       const list = byPos.get(p.position) ?? [];
       list.push(p);
       byPos.set(p.position, list);
@@ -925,8 +930,8 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
         }
       });
     }
-    // Prune history for players no longer on the board (escaped / removed).
-    const living = new Set(game.players.filter((p) => !p.escaped).map((p) => p.username));
+    // Prune history for players no longer on the board (removed mid-game).
+    const living = new Set(game.players.map((p) => p.username));
     for (const name of [...lastPieceCoords.keys()]) {
       if (!living.has(name)) lastPieceCoords.delete(name);
     }

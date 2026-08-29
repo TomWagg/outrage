@@ -304,9 +304,11 @@ function updateOpponents(root: HTMLElement, state: ClientState): void {
     info.className = "badge";
     const bits: string[] = [];
     bits.push(`🂠${p.hand_size}`);
+    // Carried jewels are still up for grabs; banked ones are in the hideout
+    // and are the only ones that score, so the two are counted separately.
     if (p.jewels.length) bits.push(`💎${p.jewels.length}`);
+    if (p.banked_jewels.length) bits.push(`🏦${p.banked_jewels.length}`);
     if (p.has_coin) bits.push("💰");
-    if (p.escaped) bits.push("ESCAPED");
     // Statuses arrive upper-case from the server, so the old lower-case
     // comparison never matched and every player was badged "NORMAL".
     const status = STATUS_BADGES[p.status];

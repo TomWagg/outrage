@@ -409,8 +409,13 @@ export function mountNotifications(
     if (p?.framer && p?.framed)
       pushToast(`${p.framer} framed ${p.framed} with a Confession!`, "info");
   });
-  ws.on("slow_escaped", (p: any) => {
-    if (p?.player) pushToast(`${p.player} escaped the Tower with their haul!`, "good", TOAST_LONG_TTL);
+  ws.on("jewels_banked", (p: any) => {
+    const n = Array.isArray(p?.jewels) ? p.jewels.length : 0;
+    if (p?.player) pushToast(
+      n
+        ? `${p.player} banked ${n} jewel${n === 1 ? "" : "s"} at the hideout!`
+        : `${p.player} slipped out for a fresh hand.`,
+      n ? "good" : "info", TOAST_LONG_TTL);
   });
   ws.on("three_doubles_bloody_tower", (p: any) => {
     if (p?.player) pushToast(`${p.player} rolled three doubles — off to the Bloody Tower.`, "bad");

@@ -221,11 +221,12 @@ def _confession(state, player, params, *, board, rng, **kw):
     if target_name == player.username:
         raise EffectError("You cannot confess against yourself")
     target = state.player(target_name)
-    if target.escaped:
-        raise EffectError(f"{target_name} has already left the Tower")
     if target.confined:
         # They're already behind a different door; there's no swap to make.
         raise EffectError(f"{target_name} is already locked up")
+    from .rules import immune_to_forced_moves as _immune
+    if _immune(board, target):
+        raise EffectError(f"{target_name} cannot be dragged out of there")
     # The framed player inherits the framer's remaining torture counter,
     # not a fresh 3 turns.
     remaining = max(0, int(player.status_turns_remaining))
@@ -264,7 +265,7 @@ def _firecrackers(state, player, params, *, board, rng, **kw):
         raise EffectError("Firecrackers can only be played from the White Tower")
     affected = [
         p.username for p in state.players
-        if not p.escaped and board.space(p.position).region == "white_tower"
+        if board.space(p.position).region == "white_tower"
     ]
     # Replace any stale list; a fresh Firecrackers supersedes a prior one.
     state.firecrackers_affected = list(dict.fromkeys(affected))
@@ -302,9 +303,12 @@ def _lasso(state, player, params, *, board, rng, **kw):
         raise EffectError(f"Target {target_name!r} not within 5 spaces of you")
     old = target.position
     target.position = player.position
-    return state, [
+    from .rules import cancel_rest_if_moved_off
+    evs = [
         _event("lassoed", roper=player.username, target=target.username, src=old, dst=player.position),
     ]
+    evs.extend(cancel_rest_if_moved_off(state, board, target, old))
+    return state, evs
 
 
 @register("binary_disruption")
@@ -530,16 +534,19 @@ def _stopped(state, player, params, *, board, rng, **kw):
 
 @register("clerk_tea_exception")
 def _clerk(state, player, params, *, board, rng, **kw):
+    from .rules import cancel_rest_if_moved_off, immune_to_forced_moves as _immune
     evs: EventList = []
     for p in state.players:
-        if p.escaped:
-            continue
         if p.status in (Status.RACKED, Status.IMPRISONED, Status.TORTURED):
+            continue
+        # The summons doesn't reach inside the White Tower either.
+        if _immune(board, p):
             continue
         if p.position != board.data.queens_house_space:
             old = p.position
             p.position = board.data.queens_house_space
             evs.append(_event("player_moved", player=p.username, src=old, dst=p.position, move_kind="clerk_tea"))
+            evs.extend(cancel_rest_if_moved_off(state, board, p, old))
     state.turn.extra_turns_queued += 1
     evs.append(_event("extra_turn_queued", player=player.username))
     return state, evs
@@ -561,8 +568,6 @@ def _birthday(state, player, params, *, board, rng, **kw):
     draws_per_player = 2 if is_april_21 else 1
     evs: EventList = []
     for p in state.players:
-        if p.escaped:
-            continue
         for _ in range(draws_per_player):
             if not state.tower_draw:
                 state.tower_draw = state.tower_discard

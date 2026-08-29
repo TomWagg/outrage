@@ -170,13 +170,18 @@ def compute_destinations(
     # The exit is a stop, not a precise landing. Reaching the Cradle Tower at all
     # is enough to walk out of it, so a roll bigger than the distance must not
     # strand a player one square short of the door — the same overshoot courtesy
-    # the wall walk's dead end at Queen's House already gets. Offered whether or
-    # not they can cash in: it's an ordinary square to anyone without a jewel and
-    # a coin, and the engine decides that on arrival, not here.
+    # the wall walk's dead end at Queen's House already gets.
+    #
+    # Only for a mover holding a coin, though: the coin is the whole price of
+    # using the door, and to anyone without one the Cradle Tower is an ordinary
+    # square reachable at an ordinary exact distance. Note the courtesy does not
+    # extend to *taking* the door — landing there is a choice the player makes
+    # from the destination list, because cashing in costs them their hand.
     escape_added = False
     escape_id = board.data.escape_space
     if (
         not forward_only          # un-accredited players can't cross the wards
+        and player.has_coin
         and escape_id
         and escape_id != from_space
         and escape_id not in destinations

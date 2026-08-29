@@ -427,6 +427,8 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
         (typeof p.turns_remaining === "number" && p.turns_remaining > 0
           ? `; ${plural(p.turns_remaining, "turn")} still to serve.`
           : ".");
+    case "rest_interrupted":
+      return `${p.player} is hauled off ${at(p.space)} and no longer misses a turn.`;
     case "rack_coin_lost":
       return `${p.player} forfeits a coin to the Rack.`;
     case "rack_hand_lost":
@@ -522,26 +524,34 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
             ? `, forfeiting ${plural(Number(p.cards_discarded ?? 0), "card")}.`
             : ".");
 
+    // ---- the Cradle Tower ---------------------------------------------------
+    case "jewels_banked": {
+      const jewels = Array.isArray(p.jewels) ? p.jewels : [];
+      const haul = jewels.length
+        ? `stashes ${plural(jewels.length, "jewel")} in the hideout`
+        : `slips out empty-handed`;
+      return `${p.player} ${haul}, hands over ` +
+        `${plural(Number(p.cards_surrendered ?? 0), "card")} and their coin, ` +
+        `and starts again with ${plural(Number(p.cards_dealt ?? 0), "fresh card")}.`;
+    }
+
     // ---- win conditions -----------------------------------------------------
     case "fast_win":
-      return `${p.player} escapes through the Cradle Tower with a jewel and a ` +
-        `coin, and wins.`;
-    case "slow_escaped":
-      return `${p.player} escapes the Tower with their haul.`;
+      return `${p.player} banks the first jewel of the game, and wins.`;
     case "game_over":
       return p.winner ? `Game over. ${p.winner} wins.` : `Game over.`;
     case "game_over_draw":
       return `The game is abandoned and recorded as a draw.`;
     case "slow_game_over": {
-      const reason = p.reason === "jewels_exhausted"
-        ? "every jewel has been claimed"
-        : p.reason === "last_player"
-          ? "only one player is left"
+      const reason = p.reason === "all_jewels_banked"
+        ? "every jewel is banked"
+        : p.reason === "majority_clinched"
+          ? "the lead is out of reach"
           : "";
       const ranking = Array.isArray(p.ranking) ? p.ranking : [];
       const rankStr = ranking
         .map((r: any, i: number) =>
-          `${i + 1}. ${r.username} (${plural(Number(r.jewel_count ?? 0), "jewel")})`)
+          `${i + 1}. ${r.username} (${plural(Number(r.jewel_count ?? 0), "jewel")} banked)`)
         .join("; ");
       return `Game over${reason ? ` — ${reason}` : ""}.` +
         (p.winner ? ` ${p.winner} wins.` : "") +

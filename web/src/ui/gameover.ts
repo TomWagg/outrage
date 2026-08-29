@@ -109,8 +109,8 @@ function banner(state: ClientState): string {
 
   const youWon = winner === state.you;
   const reason = g.mode === "fast"
-    ? "escaped the Tower with a jewel and a coin"
-    : "finished with the richest haul";
+    ? "was first to bank a jewel at the hideout"
+    : "banked a haul nobody can catch";
   return `
     <div class="gameover-banner${youWon ? " is-you" : ""}">
       <div class="gameover-crown">${jewelEmblem("crown_st_edward", 60)}</div>
@@ -124,13 +124,15 @@ function banner(state: ClientState): string {
 }
 
 function podium(players: GamePlayer[]): string {
+  // Scored on banked jewels only — mirrors ``_slow_ranking`` on the server.
+  // Anything still in a pocket when the game ended never left the Tower.
   const rows = [...players]
     .map((p) => ({
       username: p.username,
-      count: p.jewels.length,
-      top: p.jewels.reduce((m, j) => Math.max(m, JEWEL_VALUE[j] ?? 0), 0),
-      total: p.jewels.reduce((s, j) => s + (JEWEL_VALUE[j] ?? 0), 0),
-      escaped: p.escaped,
+      count: p.banked_jewels.length,
+      top: p.banked_jewels.reduce((m, j) => Math.max(m, JEWEL_VALUE[j] ?? 0), 0),
+      total: p.banked_jewels.reduce((s, j) => s + (JEWEL_VALUE[j] ?? 0), 0),
+      carrying: p.jewels.length,
     }))
     .sort((a, b) =>
       b.count - a.count || b.top - a.top || b.total - a.total
@@ -141,9 +143,9 @@ function podium(players: GamePlayer[]): string {
         <li>
           <span class="gameover-podium-name">${escapeHtml(r.username)}</span>
           <span class="gameover-podium-score">
-            ${r.count} jewel${r.count === 1 ? "" : "s"}
+            ${r.count} banked
             ${r.total ? `· ${r.total} pts` : ""}
-            ${r.escaped ? `<em>escaped</em>` : ""}
+            ${r.carrying ? `<em>${r.carrying} left in pocket</em>` : ""}
           </span>
         </li>`).join("")}
     </ol>
@@ -162,16 +164,19 @@ function playerCard(p: GamePlayer, state: ClientState): string {
         <span class="gameover-swatch" style="background:${escapeHtml(p.color)}"></span>
         <span class="gameover-name">${escapeHtml(p.username)}</span>
         ${isWinner ? `<span class="gameover-badge">winner</span>` : ""}
-        ${p.escaped && !isWinner ? `<span class="gameover-badge muted">escaped</span>` : ""}
         ${p.username === state.you ? `<span class="gameover-badge muted">you</span>` : ""}
       </div>
 
       <div class="gameover-haul">
-        ${p.jewels.length
-          ? p.jewels.map((j) =>
-              `<span class="gameover-jewel" title="${escapeHtml(jewelLabel(j))}">
+        ${p.banked_jewels.length
+          ? p.banked_jewels.map((j) =>
+              `<span class="gameover-jewel" title="${escapeHtml(jewelLabel(j))} — banked">
                  ${jewelDisc(j, 30)}</span>`).join("")
-          : `<span class="gameover-none">no jewels</span>`}
+          : `<span class="gameover-none">nothing banked</span>`}
+        ${p.jewels.map((j) =>
+            `<span class="gameover-jewel is-unbanked"
+                   title="${escapeHtml(jewelLabel(j))} — never made it out of the Tower">
+               ${jewelDisc(j, 30)}</span>`).join("")}
         ${p.has_coin ? `<span class="gameover-coin" title="Holding a coin">${coinDisc(30)}</span>` : ""}
       </div>
 

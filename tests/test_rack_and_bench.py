@@ -225,3 +225,54 @@ def test_the_rack_exit_does_not_hand_out_the_rope_route():
     # out of the White Tower on foot is forward, through the Chapel of St John.
     assert all("iw_13_13" not in path for path in opts.destinations.values())
     assert set(opts.destinations) == {"iw_14_4"}
+
+
+# ---------------------------------------------------------------------------
+# Being dragged off a resting square
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("rest_space", ["iw_shop", "iw_hospital", "iw_bench_10_13"])
+def test_a_forced_move_off_a_resting_square_cancels_the_missed_turn(rest_space):
+    """Browsing the Shop costs you a turn because you are in the Shop. A seven
+    that hauls you out of it is allowed to, and takes the errand with it."""
+    from server.game.rules import cancel_rest_if_moved_off
+
+    resting = PlayerState(username="p2", color="blue", position=rest_space,
+                          miss_next_turn=True)
+    state = _two_player_state(
+        PlayerState(username="p1", color="red", position="ww00_start"), resting)
+
+    resting.position = "iw_17_9"
+    evs = cancel_rest_if_moved_off(state, BOARD, resting, rest_space)
+
+    assert not resting.miss_next_turn
+    assert "rest_interrupted" in kinds_of(evs)
+
+
+def test_staying_put_keeps_the_missed_turn():
+    """The cancellation is about being moved, not about being targeted."""
+    from server.game.rules import cancel_rest_if_moved_off
+
+    resting = PlayerState(username="p2", color="blue", position="iw_shop",
+                          miss_next_turn=True)
+    state = _two_player_state(
+        PlayerState(username="p1", color="red", position="ww00_start"), resting)
+
+    assert cancel_rest_if_moved_off(state, BOARD, resting, "iw_shop") == []
+    assert resting.miss_next_turn
+
+
+def test_a_move_off_an_ordinary_square_leaves_the_missed_turn_alone():
+    """A miss that isn't tied to where you are standing — a raven card's
+    penalty, say — survives being shoved around."""
+    from server.game.rules import cancel_rest_if_moved_off
+
+    victim = PlayerState(username="p2", color="blue", position="iw_17_9",
+                         miss_next_turn=True)
+    state = _two_player_state(
+        PlayerState(username="p1", color="red", position="ww00_start"), victim)
+
+    victim.position = "iw_17_10"
+    assert cancel_rest_if_moved_off(state, BOARD, victim, "iw_17_9") == []
+    assert victim.miss_next_turn
