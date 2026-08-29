@@ -45,7 +45,7 @@
   /* Flash colour for the square under the destination you're hovering in the
      controls list. Deliberately unlike any square fill so it can't be
      mistaken for the board's own colouring. */
-  --sq-hover:          #00e5ff;
+  --sq-hover:          #333333;
 }
 
 * { box-sizing: border-box; }
