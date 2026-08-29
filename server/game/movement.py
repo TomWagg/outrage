@@ -93,6 +93,10 @@ def compute_destinations(
     leg of 1. Landing *exactly* on an enemy still starts a fight; only stopping
     early is refused.
 
+    The escape square is a special case in the other direction: it is added
+    whenever it is *within* ``steps``, not exactly on it. See the comment at the
+    end of the body.
+
     ``disguise_available=True`` says the mover is holding a Disguise but has not
     played it. Routes through an occupied post are then enumerated *as well*, and
     reported in ``requires_disguise`` for the caller to charge the card for. A
@@ -104,6 +108,7 @@ def compute_destinations(
         return MoveOptions({}, {}, True)
 
     blocked: set[str] = set(warder_blocking_spaces or ())
+    visited_set: set[str] = set(visited_this_turn or ())
 
     # Forward-only applies while on the wall walk and un-accredited.
     cur_space = board.space(from_space)
@@ -162,6 +167,29 @@ def compute_destinations(
             continue
         record(dest, path)
 
+    # The exit is a stop, not a precise landing. Reaching the Cradle Tower at all
+    # is enough to walk out of it, so a roll bigger than the distance must not
+    # strand a player one square short of the door — the same overshoot courtesy
+    # the wall walk's dead end at Queen's House already gets. Offered whether or
+    # not they can cash in: it's an ordinary square to anyone without a jewel and
+    # a coin, and the engine decides that on arrival, not here.
+    escape_added = False
+    escape_id = board.data.escape_space
+    if (
+        not forward_only          # un-accredited players can't cross the wards
+        and escape_id
+        and escape_id != from_space
+        and escape_id not in destinations
+        and escape_id not in blocked
+        and escape_id not in visited_set
+    ):
+        # ``src`` may be in the blocked set (we start on it); path_between allows
+        # that, so the visited squares can go straight in.
+        route = board.path_between(from_space, escape_id, blocked=blocked | visited_set)
+        if route is not None and len(route) - 1 <= steps:
+            destinations[escape_id] = route
+            escape_added = True
+
     # If the move forces the player through an enemy they can choose to stop
     # at for combat, that is a real decision — don't auto-commit. Nor when a
     # destination would cost the mover their Disguise: spending a card is never
@@ -170,6 +198,7 @@ def compute_destinations(
     forced_single = (
         (not has_combat_choice)
         and not requires_disguise
+        and not escape_added
         and (forward_only or (len(destinations) == 1))
     )
     return MoveOptions(destinations, intermediate_enemies, forced_single, requires_disguise)

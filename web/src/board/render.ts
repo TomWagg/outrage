@@ -672,7 +672,15 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
     svg.appendChild(itemLayer);
   }
 
-  // --- jewels (at offset from their home space) ---
+  // --- jewels ---
+  // Two populations, drawn from the same helper so they read as the same kind
+  // of thing:
+  //   * ``jewels_available`` — still on their White Tower plinth, drawn one
+  //     square to the right of it (``jewel_display_offset``) because the plinth
+  //     square itself is walked on.
+  //   * ``loose_jewels`` — flung across the board by Metallicity, and drawn on
+  //     the square they landed on. These were not drawn at all, so a card whose
+  //     entire point is scattering the jewels appeared to delete them.
   if (game) {
     const jewelLayer = createSVG("g", { "data-layer": "jewels" });
     const off = board.jewel_display_offset || { x: 0, y: 0 };
@@ -680,37 +688,30 @@ export function renderBoard(container: HTMLElement, opts: RenderOptions): void {
       const sp = board.spaces.find((s) => s.id === spaceId);
       if (!sp || !sp.coords) continue;
       const [px, py] = toPx(sp.coords[0] + off.x, sp.coords[1] + off.y);
-      const ring = createSVG("circle", {
-        cx: String(px + CELL / 2),
-        cy: String(py + CELL / 2),
-        r: String(CELL * 0.35),
-        fill: "#f1c40f",
-        stroke: "#b7950b",
-        "stroke-width": "2",
+      appendJewelDisc(jewelLayer, px + CELL / 2, py + CELL / 2, CELL * 0.35,
+                      jewelId, jewelName(jewelId));
+    }
+    for (const [spaceId, jewelIds] of Object.entries(game.loose_jewels ?? {})) {
+      if (!jewelIds?.length) continue;
+      const sp = board.spaces.find((s) => s.id === spaceId);
+      if (!sp) continue;
+      // spaceRect, not sp.coords: several Metallicity destinations are towers
+      // described by coords_region and have no single coordinate. That check is
+      // why they silently drew nothing.
+      const r = spaceRect(sp, toPx);
+      if (!r) continue;
+      // Slightly smaller than a plinth jewel, and fanned out so two on one
+      // square are both visible.
+      const rad = CELL * 0.28;
+      const step = Math.min(rad * 1.5, (r.w - rad) / Math.max(1, jewelIds.length));
+      const startX = r.x + r.w / 2 - (step * (jewelIds.length - 1)) / 2;
+      jewelIds.forEach((jewelId, i) => {
+        appendJewelDisc(
+          jewelLayer, startX + step * i, r.y + r.h / 2, rad, jewelId,
+          `${jewelName(jewelId)} — lying loose; step here to pick it up`,
+          true,
+        );
       });
-      jewelLayer.appendChild(ring);
-
-      // The jewel's own emblem on the gold disc. The art is authored on a
-      // 24x24 grid, so scale it down and offset to the disc's centre. Filled,
-      // not stroked — the disc is only ~22px across.
-      const ICON_PX = CELL * 0.6;
-      const scale = ICON_PX / 24;
-      const paths = jewelIconPaths(jewelId);
-      if (paths) {
-        const g = createSVG("g", {
-          transform:
-            `translate(${px + CELL / 2 - ICON_PX / 2}, ${py + CELL / 2 - ICON_PX / 2}) ` +
-            `scale(${scale})`,
-          fill: "#3a2c00",
-          stroke: "none",
-          "pointer-events": "none",
-        });
-        g.innerHTML = paths;
-        jewelLayer.appendChild(g);
-      }
-      const title = createSVG("title");
-      title.textContent = jewelName(jewelId);
-      ring.appendChild(title);
     }
     svg.appendChild(jewelLayer);
   }
@@ -1040,6 +1041,54 @@ interface PxRect { x: number; y: number; w: number; h: number; }
 interface Pt { x: number; y: number }
 
 /**
+ * A gold disc carrying a jewel's emblem.
+ *
+ * ``loose`` marks a jewel knocked off its plinth by Metallicity: a dashed rim,
+ * so at a glance you can tell "still guarded in the White Tower" from "lying on
+ * the floor over there, help yourself".
+ */
+function appendJewelDisc(
+  layer: SVGElement,
+  cx: number,
+  cy: number,
+  r: number,
+  jewelId: string,
+  tooltip: string,
+  loose = false,
+): void {
+  const ring = createSVG("circle", {
+    cx: String(cx),
+    cy: String(cy),
+    r: String(r),
+    fill: "#f1c40f",
+    stroke: loose ? "#7a5c00" : "#b7950b",
+    "stroke-width": "2",
+    ...(loose ? { "stroke-dasharray": "3 2" } : {}),
+  });
+  layer.appendChild(ring);
+
+  // The jewel's own emblem on the gold disc. The art is authored on a 24x24
+  // grid, so scale it down and offset to the disc's centre. Filled, not
+  // stroked — the disc is only ~22px across.
+  const iconPx = r * 1.7;
+  const paths = jewelIconPaths(jewelId);
+  if (paths) {
+    const g = createSVG("g", {
+      transform:
+        `translate(${cx - iconPx / 2}, ${cy - iconPx / 2}) scale(${iconPx / 24})`,
+      fill: "#3a2c00",
+      stroke: "none",
+      "pointer-events": "none",
+    });
+    g.innerHTML = paths;
+    layer.appendChild(g);
+  }
+  const title = createSVG("title");
+  title.textContent = tooltip;
+  ring.appendChild(title);
+}
+
+/**
  * A coil of rope between two square centres.
  *
  * Drawn as a sine-ish zigzag along the segment with a knot at each end, so it
@@ -1144,7 +1193,7 @@ const REGION_NAMES: Record<string, string> = {
  * reading "Rope — Rack Sender ⇄ ." Locate them instead: a numbered step on the
  * Wall Walk, or a region and grid reference in the wards.
  */
-function spaceLabel(board: BoardData, id: string): string {
+export function spaceLabel(board: BoardData, id: string): string {
   const sp = board.spaces.find((s) => s.id === id);
   if (!sp) return "";
   if (sp.label) return sp.label;

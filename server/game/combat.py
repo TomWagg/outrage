@@ -122,8 +122,15 @@ def play_defender_special(
       cards they committed and draw that many replacements — the weapons were
       spent even though the fight never happened. (``tower_deck`` is required
       for this; without it the cards are discarded and not replaced.)
-    - ``Mass Accretor`` (custom): steal one random weapon from the attacker's
-      committed pile into the defender's hand.
+    - ``Mass Accretor`` (custom): take one random weapon out of the attacker's
+      committed pile and swing it straight back — the stolen card joins the
+      defender's *committed* pile rather than their hand, so it counts against
+      the attacker in this fight. That double swing is the whole point of the
+      card; dropping the weapon into the hand meant it did nothing until some
+      later fight, and the attacker's loss was the only visible effect.
+
+    The special card itself is discarded by the caller
+    (``rules._intent_play_combat_special``), not here.
     """
     combat = _require_combat(state)
     if combat.phase not in ("defender_specials", "defender_selecting", "attacker_selecting"):
@@ -158,12 +165,14 @@ def play_defender_special(
         return combat
     if card.effect_key == "mass_accretor":
         if not combat.attacker_cards:
-            # Nothing to steal — discard the card and continue.
+            # Nothing to steal — the card is spent regardless.
             combat.mass_accretor_played = True
             combat.resolved_events.append("mass_accretor_no_target")
             return combat
         stolen = combat.attacker_cards.pop(rng.randint(0, len(combat.attacker_cards) - 1))
-        defender.add_card(stolen)
+        # Straight into the fight, not into the hand: the weapon is turned on
+        # its owner here and now.
+        combat.defender_cards.append(stolen)
         combat.mass_accretor_played = True
         combat.resolved_events.append(f"mass_accretor_stole:{stolen.id}")
         return combat

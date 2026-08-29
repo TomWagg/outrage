@@ -121,6 +121,17 @@ class Board:
             return None
         return self._walk_order[nxt]
 
+    def prev_wall_walk_space(self, space_id: str) -> Optional[str]:
+        """Follow the wall-walk order backward by one step.
+
+        Returns ``None`` at ``ww00_start`` (the walk is linear, so there is
+        nothing before it) or for a space outside the wall walk.
+        """
+        idx = self._walk_index.get(space_id)
+        if idx is None or idx <= 0:
+            return None
+        return self._walk_order[idx - 1]
+
     # ---------- traversal ----------------------------------------------------
 
     def path_between(self, src: str, dst: str, blocked: Optional[Iterable[str]] = None) -> Optional[list[str]]:

@@ -214,6 +214,17 @@ export function mountNotifications(
     }
   });
 
+  ws.on("mass_accretor_stole", (p: any) => {
+    if (!p?.player) return;
+    // Weapons are committed face-up, so naming the card is fair game.
+    const name = String(p.card ?? "").split(":")[1]?.replace(/_/g, " ") || "a weapon";
+    pushToast(
+      `${p.player} rips ${name} from ${p.attacker} and swings it back!`,
+      "good",
+      TOAST_LONG_TTL,
+    );
+  });
+
   ws.on("coin_picked_up", (p: any) => {
     if (!p?.player) return;
     const left = typeof p.remaining === "number" && typeof p.total === "number"

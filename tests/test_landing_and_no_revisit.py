@@ -136,15 +136,42 @@ def test_extra_turn_queues_and_resets_doubles():
     assert state.turn.consecutive_doubles == 0
 
 
-def test_go_back_by_roll_teleports_back_along_wall():
+def test_go_back_by_roll_retraces_the_route_just_walked():
+    """The number thrown is the number that got you here, so it undoes the move."""
+    player = make_player("ww61")
+    state = make_state(player)
+    state.turn.roll = [2, 2]  # total 4: ww61 → ww65_go_back is exactly 4 steps
+    path = ["ww61", "ww62_beauchamp", "ww63", "ww64", "ww65_go_back"]
+
+    evs = _commit_move(state, BOARD, player, "ww65_go_back", path)
+    assert "go_back_by_roll" in [e["kind"] for e in evs]
+    assert player.position == "ww61"
+
+
+def test_go_back_by_roll_continues_along_the_wall_when_the_route_runs_out():
+    """A split 7 walks you fewer squares than the dice show.
+
+    The retrace then runs off the start of the turn's trail, so it carries on
+    backwards along the wall walk for the remainder rather than stopping short.
+    """
+    player = make_player("ww63")
+    state = make_state(player)
+    state.turn.roll = [3, 4]  # a 7, of which only 2 steps were spent on us
+    path = ["ww63", "ww64", "ww65_go_back"]
+
+    _commit_move(state, BOARD, player, "ww65_go_back", path)
+    # 2 steps back to ww63, then 5 more along the wall walk → order 58.
+    assert player.position == "ww58_change"
+
+
+def test_go_back_by_roll_falls_back_to_wall_order_with_no_trail():
+    """Reconnect or a hand-built state can leave no route to retrace."""
     player = make_player("ww65_go_back")
     state = make_state(player)
-    state.turn.roll = [3, 2]  # total 5 → back to wall_walk_order 60
+    state.turn.roll = [3, 2]
 
     evs = _resolve_landing(state, BOARD, player)
-    kinds = [e["kind"] for e in evs]
-    assert "go_back_by_roll" in kinds
-    # ww60_questioned has wall_walk_order 60.
+    assert "go_back_by_roll" in [e["kind"] for e in evs]
     assert player.position == "ww60_questioned"
 
 

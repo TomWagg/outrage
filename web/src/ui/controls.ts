@@ -7,6 +7,7 @@
 import type { WsClient } from "../net/ws.js";
 import type { ClientState } from "../state.js";
 import { currentTurnUsername, playerByName } from "../state.js";
+import { spaceLabel } from "../board/render.js";
 import { towerCardIcon } from "./card_art.js";
 import { summonsLocationLabel } from "./card_descriptions.js";
 
@@ -97,9 +98,12 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
   const isMyTurn = cur === you;
 
   // A trade is only offered instead of rolling, so anything that moves the turn
-  // on — or moves it past the roll — abandons a half-made selection.
+  // on — or moves it past the roll, or locks you up mid-selection — abandons a
+  // half-made selection.
   const turnKey = `${cur ?? ""}#${g.turn.roll.join(",")}`;
-  const tradeable = isMyTurn && (g.phase === "TURN_START" || g.phase === "PRE_ROLL");
+  const confinedNow = !!me && ["IMPRISONED", "TORTURED", "RACKED"].includes(me.status);
+  const tradeable =
+    isMyTurn && !confinedNow && (g.phase === "TURN_START" || g.phase === "PRE_ROLL");
   if (!tradeable || turnKey !== tradeTurnKey) {
     if (tradeOpen) closeTrade();
     tradeTurnKey = turnKey;
@@ -236,7 +240,12 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
             updateControls(root, state, ws);
           },
         );
-        if (handSize < 2 && !tradeOpen) {
+        if (confinedNow) {
+          // The server refuses it too; without this the button was offered to a
+          // prisoner and only failed once they'd picked their cards.
+          trade.disabled = true;
+          trade.title = "No trading while you're locked up";
+        } else if (handSize < 2 && !tradeOpen) {
           trade.disabled = true;
           trade.title = "You need at least 2 cards — the trade costs you one";
         }
@@ -259,7 +268,8 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           `<div>Choose where to send <strong>${targetName}</strong> ` +
           `(${keys.length} option${keys.length === 1 ? "" : "s"}):</div>`;
         for (const d of keys) {
-          row.appendChild(button(d, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
+          row.appendChild(button(named(state, d), () =>
+            ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
       } else {
         // Normal: roller picking their own destination.
@@ -288,7 +298,7 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
           const enemy = enemyAt.get(d);
           const tags =
             (enemy ? "[fight] " : "") + (needsDisguise.has(d) ? "[uses Disguise] " : "");
-          const label = `${tags}${d}${enemy ? ` (vs ${enemy})` : ""}`;
+          const label = `${tags}${named(state, d)}${enemy ? ` (vs ${enemy})` : ""}`;
           row.appendChild(button(label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
       }
@@ -339,6 +349,16 @@ function updateControls(root: HTMLElement, state: ClientState, ws: WsClient): vo
       renderPreRollCardButtons(pending, g, me, you, state, ws, POST_MOVE_PLAYABLE_EFFECTS);
       break;
   }
+}
+
+/**
+ * A destination as a player would name it.
+ *
+ * These buttons showed the raw space id — "iw_8_11" — which is a database key,
+ * not a place. Falls back to the id only if the board hasn't loaded yet.
+ */
+function named(state: ClientState, spaceId: string): string {
+  return state.board ? (spaceLabel(state.board, spaceId) || spaceId) : spaceId;
 }
 
 /**

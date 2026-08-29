@@ -496,7 +496,13 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
     case "lassoed":
       return `${p.roper} lassos ${p.target} from ${at(p.src)} to ${at(p.dst)}.`;
     case "mass_accretor_queued":
-      return `${p.player} readies the Mass Accretor for the next fight.`;
+      return `${p.player} readies the Mass Accretor.`;
+    case "mass_accretor_stole":
+      return `${p.player} wrests ${cardNameFromId(p.card) || "a weapon"} out of ` +
+        `${p.attacker}'s hands and turns it on them.`;
+    case "mass_accretor_no_target":
+      return `${p.player} plays the Mass Accretor, but ${p.attacker} has ` +
+        `committed no weapon to take.`;
 
     // ---- firecrackers -------------------------------------------------------
     case "firecrackers":

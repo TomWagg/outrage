@@ -966,33 +966,49 @@ def _dispatch_space_action(
         return evs, False
 
     if key == "go_back_by_roll":
-        # Move the player backward along the wall walk by the dice total that
-        # put them on this square (per ``uses_landing_roll``).
+        # "Go back the number thrown" means back along the route you just walked,
+        # not back that many positions in wall-walk order. Since the number
+        # thrown is the number that brought you here, retracing it normally puts
+        # you exactly where you started the turn — which is the point of the
+        # square. Counting board positions instead landed players on squares
+        # they had never been near.
         total = sum(state.turn.roll) if state.turn.roll else 0
-        if total <= 0 or space.wall_walk_order is None:
+        if total <= 0:
             return evs, False
-        target_order = space.wall_walk_order - total
-        if target_order < 0:
-            return evs, False
-        target = next(
-            (s for s in board.data.spaces
-             if s.region == "wall_walk" and s.wall_walk_order == target_order),
-            None,
-        )
-        if target is None:
+        trail = state.turn.visited_this_turn
+        # Where are we on the trail? Normally the last entry, but be defensive:
+        # a teleport chain could have appended something after us.
+        try:
+            here = len(trail) - 1 - trail[::-1].index(player.position)
+        except ValueError:
+            here = len(trail) - 1
+        idx = here - total
+        target_id = trail[idx] if idx >= 0 else (trail[0] if trail else player.position)
+        # A split 7 hands out fewer steps than the dice show, so the retrace can
+        # run off the start of the trail. Keep going backwards along the wall
+        # walk for the remainder; a trail that starts off the wall walk simply
+        # stops at its beginning.
+        overshoot = max(0, -idx)
+        while overshoot > 0:
+            prev = board.prev_wall_walk_space(target_id)
+            if prev is None:
+                break
+            target_id = prev
+            overshoot -= 1
+        if target_id == player.position:
             return evs, False
         old = player.position
-        player.position = target.id
+        player.position = target_id
         # Visited tracking: the teleport destination counts as visited too.
-        if target.id not in state.turn.visited_this_turn:
-            state.turn.visited_this_turn.append(target.id)
+        if target_id not in state.turn.visited_this_turn:
+            state.turn.visited_this_turn.append(target_id)
         evs.append(_ev(
             "go_back_by_roll", player=player.username,
-            src=old, dst=target.id, steps=total,
+            src=old, dst=target_id, steps=total,
         ))
-        # Resolve landing on the new square (but guard against recursion
-        # through another go_back_by_roll — wall walk is linear so a backward
-        # jump cannot land on another go_back_by_roll square).
+        # Resolve landing on the new square. The wall walk is linear and the
+        # retrace only moves backwards, so this cannot land on another
+        # go_back_by_roll square and recurse.
         evs.extend(_resolve_landing(state, board, player))
         return evs, True
 
@@ -1632,6 +1648,28 @@ def _intent_play_combat_special(state, payload, *, board, rng):
     # Discard the special card.
     state.tower_discard.append(card)
     evs = [_ev("combat_special", player=username, card=card.name)]
+    # Mass Accretor turns one of the attacker's own weapons on them mid-fight,
+    # which changes both totals. Surface it rather than leaving it buried in
+    # ``combat.resolved_events``: from the outside the attacker's score simply
+    # dropped for no stated reason.
+    # Scoped to this card: ``resolved_events`` accumulates for the whole fight,
+    # so a Sanctuary played after a Mass Accretor would otherwise re-announce
+    # the earlier theft.
+    stole = next(
+        (e.split(":", 1)[1] for e in reversed(combat.resolved_events)
+         if e.startswith("mass_accretor_stole:")),
+        None,
+    ) if card.effect_key == "mass_accretor" else None
+    if stole is not None:
+        evs.append(_ev(
+            "mass_accretor_stole", player=username,
+            attacker=combat.attacker, card=stole,
+        ))
+    elif (card.effect_key == "mass_accretor"
+          and "mass_accretor_no_target" in combat.resolved_events):
+        evs.append(_ev(
+            "mass_accretor_no_target", player=username, attacker=combat.attacker,
+        ))
     if combat.sanctuary_cancelled:
         evs.append(_ev(
             "sanctuary_taken",

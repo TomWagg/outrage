@@ -1,3 +1,5 @@
+# Board notes
+
 The inner ward can be described as a 20 x 18 grid (many of which are not valid squares). I'm going to list the positions of all valid squares. If I don't mention some position coordinates you can assume that's an invalid square (make them green for grass).
 
 Here I define it such that (1, 1) is the corner closest to the bell tower, (20, 1) is closest to the salt tower, etc (neither of those squares are valid btw). The valid squares are as follows (all ranges are inclusive):
@@ -67,14 +69,3 @@ Here's what I missed:
 - The Bloody Tower is one space is 3 squares wide (1 tall), it connects only to the yellow square that is second from last before the Queen's House (ww_74 I believe)
 - The Raven Deck sits on the green spaces from (3, 9) to (6, 13) - this isn't a valid square, just somewhere for the cards to sit (and to display whichever card is drawn during the turn that it's drawn)
 - The Barracks aren't a valid square but you can show the Warder's who aren't at their posts here - it spans (10, 15) to (17, 15)
-
-
-Nice work so far, some things that I noticed need fixing:
-
-- It still doesn't seem like if you roll doubles then you get an extra turn (I rolled two 6s but only got one turn)
-- It looks like you don't miss a turn after combat, losers in combat should spend 1 turn in the hosipital
-- It's possible to fight while not accredited currently - you're not allowed to start combat until after you both the attacker and defender are accredited
-- You also can't use a sanctuary card if you're not accredited
-- Colours for the board are slightly off, can you make individual squares use named CSS variables (like 'tower', 'yellow-square', 'raven-square', 'white-tower' etc.) so that I can manually edit them
-- Raven cards that are supposed to give you an immediate attempt at theft make you end your turn before you can try it
-- Yeoman warders should start at their posts

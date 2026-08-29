@@ -1988,7 +1988,7 @@
       "id": "out_8_m3",
       "label": "",
       "region": "exterior_south",
-      "kind": "normal",
+      "kind": "raven_trigger",
       "coords": [
         8,
         -3
@@ -2049,7 +2049,7 @@
       "id": "out_15_m3",
       "label": "",
       "region": "exterior_south",
-      "kind": "normal",
+      "kind": "raven_trigger",
       "coords": [
         15,
         -3
