@@ -13,10 +13,19 @@ export function renderLobbyLayout(root: HTMLElement, ws: WsClient, state: Client
     <div class="main">
       <div class="board-wrap">
         <div class="board-placeholder">
-          <div>
-            <div style="font-size:1.2em; color: var(--accent);">Board will appear here</div>
-            <div style="margin-top:0.5rem;">Waiting for a board layout to be authored.<br/>
-              In the meantime, join players in the lobby and start a game from here.
+          <div class="lobby-welcome">
+            <div class="lobby-welcome-title">Outrage!</div>
+            <p>
+              Two to six thieves, one Tower of London, and five Crown Jewels
+              that are not going to steal themselves.
+            </p>
+            <p class="lobby-welcome-hint">
+              Add players on the right, pick a mode, and start the game.
+            </p>
+            <div class="lobby-welcome-links">
+              <a href="/about.html">What is this?</a>
+              <a href="/rules.html">Rulebook</a>
+              <a href="/developers.html">Developers</a>
             </div>
           </div>
         </div>

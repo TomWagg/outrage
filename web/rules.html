@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rulebook — Outrage! Steal the Crown Jewels</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+    <link rel="stylesheet" href="/src/styles/pages.css" />
+  </head>
+  <body class="page">
+    <header id="page-nav"></header>
+
+    <h1>Rulebook</h1>
+    <p class="page-standfirst">
+      Everything the engine actually enforces. Start with the first section and
+      open the rest as you need them — nobody reads a rulebook front to back.
+    </p>
+
+    <div class="rule-toolbar" id="rule-toolbar"></div>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="basics" open>
+      <summary>The basics<span class="rule-section-blurb">start here</span></summary>
+      <div class="rule-section-body">
+        <p>
+          Two to six players. Everyone starts on the same square, outside, with a
+          hand of cards: <strong>six each</strong> with two to four players,
+          <strong>four each</strong> with five or six.
+        </p>
+
+        <h3>A turn</h3>
+        <p>On your turn you do <em>one</em> of these:</p>
+        <ul>
+          <li><strong>Roll and move.</strong> The usual.</li>
+          <li>
+            <strong>Trade cards.</strong> Stay where you are and hand in two or
+            more cards to draw one fewer than you gave. The card you lose on the
+            exchange is the fee — which is why handing in one card buys nothing
+            and is refused.
+          </li>
+          <li>
+            <strong>Nothing.</strong> End your turn. Sometimes the best square
+            is the one you are already on.
+          </li>
+        </ul>
+        <p>
+          Before and after the roll there are moments where certain cards can be
+          played — see <a href="#cards-timing">when cards can be played</a>.
+        </p>
+
+        <h3>Moving</h3>
+        <p>
+          Roll two dice and move exactly that many squares, one square at a time
+          along the lines on the board. Two rules shape every move:
+        </p>
+        <ul>
+          <li>
+            <strong>You may not revisit a square in the same turn.</strong> Not
+            on a double, not on either half of a split — once you have stood on
+            a square this turn, no later step may re-enter it.
+          </li>
+          <li>
+            <strong>Until you are accredited you can only go forwards along the
+            wall walk.</strong> No turning round, no cutting into the inner ward.
+          </li>
+        </ul>
+        <p>
+          Where a roll gives you more than one place to end up, you pick from the
+          highlighted squares. Where there is only one, the game takes it for you.
+        </p>
+
+        <h3>Doubles</h3>
+        <p>
+          A double earns you another turn once this one finishes. Roll a
+          <strong>third double in a row</strong> and the guards take an interest:
+          straight to the Bloody Tower.
+        </p>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="accreditation">
+      <summary>Accreditation<span class="rule-section-blurb">getting off the wall walk</span></summary>
+      <div class="rule-section-body">
+        <p>
+          The wall walk is 78 squares of one-way queue, and it dead-ends at
+          <strong>Queen's House</strong>. Overshooting does not matter: a roll
+          bigger than the distance simply leaves you on Queen's House.
+        </p>
+        <p>
+          Arriving there puts you on trial. From your next turn, your roll is
+          judged rather than walked:
+        </p>
+        <ul>
+          <li><strong>Odd total</strong> — accredited. Use that same roll to move freely.</li>
+          <li>
+            <strong>A double</strong> — the clerks give you another go. (Every
+            double is even, so without this a double would be an automatic
+            failure. The three-doubles rule still applies.)
+          </li>
+          <li><strong>Any other even total</strong> — turned away. Your turn ends.</li>
+        </ul>
+        <p>There are two shortcuts:</p>
+        <ul>
+          <li>
+            The wall-walk square marked <em>Go to Queen's House (accredited)</em>
+            hands it to you outright, and ends your turn there.
+          </li>
+          <li>
+            A <strong>Tower Pass</strong> played while standing on Queen's House
+            accredits you without a roll.
+          </li>
+        </ul>
+        <p>
+          Accreditation is permanent. It survives prison, the Rack, and walking
+          out of the Tower and back in again.
+        </p>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="board">
+      <summary>The board<span class="rule-section-blurb">four regions and what they do</span></summary>
+      <div class="rule-section-body">
+        <p>
+          <strong>The wall walk</strong> (78 squares) rings the Tower. One-way
+          until you are accredited, an ordinary two-way path afterwards. Most of
+          the numbered squares that do something live here.
+        </p>
+        <p>
+          <strong>The inner ward</strong> (122 squares) is the open middle,
+          reachable only once accredited. Most of it is watched: landing on a
+          watched square turns over a
+          <a href="#raven-deck-section">raven card</a>.
+        </p>
+        <p>
+          <strong>The White Tower</strong> (24 squares) holds the jewels. It is a
+          single one-way chain — you enter at one end and leave at the other.
+          Inside it, two special rules apply: <strong>nothing can move you</strong>
+          (no split roll, no Lasso, no card), and <strong>nobody can fight</strong>.
+          One square past the last jewel is the Rack Sender.
+        </p>
+        <p>
+          <strong>The exterior, south</strong> is the strip outside the walls
+          holding the Cradle Tower — the way out — linked back to the inner ward
+          by slides.
+        </p>
+
+        <h3>Squares that do something</h3>
+        <table>
+          <thead><tr><th>Square</th><th>What happens when you land on it</th></tr></thead>
+          <tbody>
+            <tr><td>Towers, Museum, Royal Armouries, Devereux</td>
+                <td>Draw a tower card. (The Broad Arrow Tower is the exception — see below.)</td></tr>
+            <tr><td>Devereux Tower</td><td>Also hands you a coin, if you have not got one and any are left.</td></tr>
+            <tr><td>Broad Arrow Tower</td><td>Discard every weapon in your hand. No card.</td></tr>
+            <tr><td>Watched squares (most of the inner ward)</td><td>Turn over a raven card.</td></tr>
+            <tr><td>Bloody Tower</td><td>Imprisoned, three turns. Walking in is the same as being marched in.</td></tr>
+            <tr><td>Bowyer Tower</td><td>Questioned, three turns. Same door, same lock.</td></tr>
+            <tr><td>Beauchamp Tower</td><td><em>Nothing.</em> You are just visiting — only its raven card locks you in.</td></tr>
+            <tr><td>Rack Sender</td><td>Straight to the Rack. No roll, no appeal.</td></tr>
+            <tr><td>Hospital, benches, the Shop</td><td>Miss your next turn.</td></tr>
+            <tr><td>Change a card (×3)</td><td>Discard one card of your choice, draw the top of the tower deck.</td></tr>
+            <tr><td>Swap a card</td><td>Give a card of your choosing to an opponent; take a random one back.</td></tr>
+            <tr><td>Extra turn (×2)</td><td>Take another turn. Also resets your doubles count.</td></tr>
+            <tr><td>Go back the number thrown</td><td>Retrace your steps this turn by the number you rolled.</td></tr>
+            <tr><td>Miss a turn (×3)</td><td>Exactly that.</td></tr>
+            <tr><td>Go to Queen's House (×3), Go to the Shop, Go to Broad Arrow Tower</td>
+                <td>Sent there, and that square's own effect then happens to you.</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Shortcuts</h3>
+        <ul>
+          <li>
+            <strong>Slides</strong> link the inner ward to the southern strip.
+            They are ordinary two-way connections — one step each.
+          </li>
+          <li>
+            <strong>The secret passage</strong> joins the Chapel Royal to the
+            Salt Tower, and costs one step like any other line.
+          </li>
+        </ul>
+        <div class="page-note">
+          The Shop is a dead end whose only neighbour is the square that sends
+          you to it. So when your missed turn there is served, you are put back
+          out on that square rather than left to walk straight back in.
+        </div>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="jewels">
+      <summary>Stealing a jewel<span class="rule-section-blurb">the whole point</span></summary>
+      <div class="rule-section-body">
+        <p>
+          Five jewels sit in a row inside the White Tower. Land on one and you
+          may attempt it.
+        </p>
+        <p>
+          <strong>Roll two dice. You need 12.</strong> Every burglary tool you
+          play takes its value off that target — so a Key to the Jewel Cases
+          (worth 9) brings it down to 3, and a couple of Files bring it down to 8.
+        </p>
+        <ul>
+          <li><strong>Tools are never used up.</strong> Play every one you hold, every time.</li>
+          <li>
+            <strong>Failing costs you the turn, not the chance.</strong> You stay
+            standing on the jewel and may try again next turn, as often as you like.
+          </li>
+          <li>
+            <strong>A double on a theft roll earns an extra turn</strong> — but it
+            does not count towards the three-doubles rule. Picking a lock is not
+            charging about the board.
+          </li>
+        </ul>
+        <p>
+          A jewel you are holding is not safe and is not worth anything yet. It
+          can be taken off you in a fight, and it is confiscated if you end up on
+          the Rack. See <a href="#exit">getting out</a>.
+        </p>
+        <div class="page-note">
+          One raven card — the Jewel Glimpse — walks you straight to a named
+          jewel and offers you the attempt on the spot, wherever you were.
+        </div>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="exit">
+      <summary>Coins, the Cradle Tower, and banking<span class="rule-section-blurb">how a jewel becomes a win</span></summary>
+      <div class="rule-section-body">
+        <h3>The coin</h3>
+        <p>
+          The Devereux Tower holds <strong>one coin per player</strong>. You can
+          hold one at a time, and it is the entire price of using the exit.
+          Coins handed back — by a served Rack sentence, or won in a fight by
+          someone already carrying one — return to the pile for somebody else.
+        </p>
+
+        <h3>The Cradle Tower</h3>
+        <p>
+          The Cradle Tower is the way out, and it needs a coin. Because reaching
+          the door is the hard part, you do not need an exact roll:
+          <strong>if your roll can reach it, it is offered</strong> — the same
+          courtesy the wall walk's dead end gets. Walking <em>past</em> it is
+          allowed too; taking the door is always a deliberate choice.
+        </p>
+        <p>Using the exit costs you everything you are carrying:</p>
+        <ul>
+          <li>Your jewels are stashed. They are safe forever and are the only jewels that score.</li>
+          <li>Your coin goes back on the Devereux pile.</li>
+          <li>Your whole hand is shuffled back into the tower deck.</li>
+        </ul>
+        <p>
+          Then you are dealt a fresh opening hand and put back on the start
+          square, <strong>still accredited</strong>. Leaving is not the end of
+          your game — it is a lap.
+        </p>
+        <div class="page-note">
+          Walking out with <em>no</em> jewels is a legitimate play. It is how a
+          player stripped of their hand on the Rack gets a new one.
+        </div>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="fighting">
+      <summary>Fighting<span class="rule-section-blurb">taking it off somebody else</span></summary>
+      <div class="rule-section-body">
+        <p>You may start a fight when all of these are true:</p>
+        <ul>
+          <li>You end your move on a square an opponent is standing on.</li>
+          <li>You are <strong>both</strong> accredited.</li>
+          <li>You are holding at least one weapon.</li>
+          <li>You are not in the White Tower. Nobody fights in there.</li>
+        </ul>
+        <p>
+          If your route passes through someone you could fight, you may stop
+          short on them deliberately and take them on instead of moving your
+          full roll.
+        </p>
+
+        <h3>How a fight resolves</h3>
+        <ol>
+          <li>The attacker commits any number of weapons, face-down.</li>
+          <li>
+            The defender commits any number of weapons, face-down. Only the
+            defender may use the Suit of Armour.
+          </li>
+          <li>
+            The defender may then play <strong>Sanctuary</strong> or
+            <strong>Mass Accretor</strong> (see below).
+          </li>
+          <li>
+            Both sides reveal. Highest total wins;
+            <strong>a tie goes to the defender</strong>.
+          </li>
+        </ol>
+
+        <h3>Spoils</h3>
+        <ul>
+          <li>The winner takes every jewel the loser was carrying.</li>
+          <li>
+            The winner takes the loser's coin. If they already had one, the spare
+            goes back to the Devereux pile.
+          </li>
+          <li>
+            The winner draws replacement cards — <strong>one for each weapon
+            they themselves played</strong>. Fighting hard is not free, but it
+            is not ruinous either.
+          </li>
+          <li>Every committed weapon is discarded, on both sides.</li>
+          <li>The loser goes to hospital and misses their next turn.</li>
+        </ul>
+
+        <h3>The two defensive cards</h3>
+        <p>
+          <strong>Sanctuary</strong> calls the fight off. The defender is spirited
+          away to the Chapel Royal, and both players lose the weapons they
+          committed and draw that many replacements — the blows were struck even
+          though the fight did not finish.
+        </p>
+        <p>
+          <strong>Mass Accretor</strong> takes one weapon at random out of the
+          attacker's committed pile and adds it to the defender's. It swings
+          twice: the attacker's total drops and the defender's rises by the same
+          amount.
+        </p>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="trouble">
+      <summary>Prison, the Rack, and other misfortune<span class="rule-section-blurb">and how to get out</span></summary>
+      <div class="rule-section-body">
+        <h3>Missing a turn</h3>
+        <p>
+          The hospital, the two benches and the Shop all cost you your next turn.
+          If somebody drags you off one of those squares before you have served
+          it — a split roll, a Lasso — the debt goes with the square and is
+          written off.
+        </p>
+
+        <h3>Prison</h3>
+        <p>
+          The <strong>Bloody Tower</strong> imprisons anyone who lands on it. The
+          <strong>Bowyer Tower</strong> questions them. The
+          <strong>Beauchamp Tower</strong> only locks you up via its raven card.
+          All three hold you for <strong>three turns</strong>, and while held you
+          cannot move and nobody can move you.
+        </p>
+        <p>Three ways out:</p>
+        <ul>
+          <li><strong>Roll a double</strong> on your turn — you walk free and use that roll to move.</li>
+          <li><strong>Serve the three turns.</strong></li>
+          <li>
+            <strong>Play the right card.</strong> A Royal Pardon answers prison
+            or questioning. A Disguise walks you out of the Bloody Tower. A Rope
+            or a Ladder gets you out of the Beauchamp Tower. A Confession, played
+            while being questioned, frames somebody else — you swap places and
+            they serve the rest of your sentence.
+          </li>
+        </ul>
+
+        <h3>The Rack</h3>
+        <p>
+          The Rack is worse than prison in every way. You get there by landing on
+          the Rack Sender in the White Tower, by drawing the Rack of Torment, or
+          by being caught in the White Tower when the Firecrackers go off.
+        </p>
+        <ul>
+          <li>It takes <strong>all your jewels</strong>, and <strong>either your coin or your entire hand</strong> — the coin if you have one.</li>
+          <li>It holds you for three turns, and <strong>rolling does not help</strong>. There is no escaping early.</li>
+          <li>You are skipped entirely while you are on it: no roll, no decision, no prompt.</li>
+        </ul>
+        <p>
+          <strong>The Rack Pardon is the exception.</strong> Play it and the
+          sentence is torn up: your jewels, your coin and your cards all come
+          straight back, and you walk out of the cell immediately. Nothing is
+          actually destroyed until the three turns are served — so the Pardon
+          works right up to the last moment.
+        </p>
+        <div class="page-note">
+          The Rack cannot confiscate a Rack Pardon. Taking the one card that
+          answers a Rack sentence, as part of that sentence, would make it a card
+          that could never be played.
+        </div>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="warders">
+      <summary>Yeoman Warders and Disguises<span class="rule-section-blurb">walls that move</span></summary>
+      <div class="rule-section-body">
+        <p>
+          There are four Yeoman Warder posts and four warders, and at the start
+          of the game every post is manned. A manned post is
+          <strong>impassable</strong> — you cannot step onto it or through it.
+        </p>
+        <p>
+          A <strong>Disguise</strong> gets you past. You do not have to decide in
+          advance: routes through a manned post are offered alongside the free
+          ones and marked, and the card is only spent if you actually commit to
+          one. Stopping short of the post is free.
+        </p>
+        <p>
+          Raven cards move the warders about — one recalls a warder to the
+          Barracks, several send one back out to a named post. A post already
+          manned cannot take a second warder.
+        </p>
+        <p>
+          The Disguise has two other uses: it walks you out of the Bloody Tower,
+          and it satisfies a Stopped and Searched card.
+        </p>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="splits">
+      <summary>Sevens and Binary Disruption<span class="rule-section-blurb">moving somebody else</span></summary>
+      <div class="rule-section-body">
+        <h3>Rolling a seven</h3>
+        <p>
+          A seven is not yours alone. You <strong>split it</strong> between
+          yourself and one opponent, in any division you like — 6 and 1, 4 and 3,
+          or all seven for yourself. You also choose which of you moves first,
+          which matters when one leg's landing changes the other's options.
+        </p>
+        <p>
+          You can only give steps to someone the roll could actually move.
+          Players who are locked up, or inside the White Tower, are not offered —
+          and if nobody can be moved at all, you simply take all seven.
+        </p>
+        <p>
+          A leg handed to an opponent is walked in full: you chose its length, so
+          you cannot also stop it short.
+        </p>
+
+        <h3>Binary Disruption</h3>
+        <p>
+          The card deals out the roll you have just thrown. It is played
+          <strong>after the dice land but before you move</strong> — you play it
+          because of the numbers you can see.
+        </p>
+        <p>
+          It rearranges the roll rather than re-adding it, so
+          <strong>the two dice go one each</strong>. Roll a 5 and a 3 and one
+          player goes 5 while the other goes 3; you cannot split that 8 as 7 and
+          1, and you cannot keep both. That is what separates it from a natural
+          seven.
+        </p>
+        <p>
+          If neither die can move anybody, the card stays in your hand rather
+          than being spent for nothing.
+        </p>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="cards-timing">
+      <summary>When cards can be played<span class="rule-section-blurb">timing is most of the skill</span></summary>
+      <div class="rule-section-body">
+        <p>
+          Weapons and burglary tools are never "played" from your hand — they are
+          committed in a fight or on a theft. Everything else has a window:
+        </p>
+        <table>
+          <thead><tr><th>Window</th><th>Cards</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Before you roll</strong></td>
+              <td>Tower Pass, Sanctuary, Disguise, Firecrackers, Lasso, and the escape cards.</td>
+            </tr>
+            <tr>
+              <td><strong>After the roll, before you move</strong></td>
+              <td>Binary Disruption, and only Binary Disruption.</td>
+            </tr>
+            <tr>
+              <td><strong>After your move</strong></td>
+              <td>
+                Tower Pass, Sanctuary, Disguise, Confession, Royal Pardon, Rack
+                Pardon, Rope/Ladder — the cards that answer something the landing
+                did to you.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Any time, even off your turn</strong></td>
+              <td>
+                Royal Pardon, Rack Pardon, Rope/Ladder and Disguise, but only if
+                you are locked up. A racked player gets no turn at all, so
+                without this a Rack Pardon could never be played.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>In a fight, defending</strong></td>
+              <td>Sanctuary and Mass Accretor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="tower-deck-section">
+      <summary>The tower deck<span class="rule-section-blurb"><span data-deck-size="tower">…</span> cards</span></summary>
+      <div class="rule-section-body">
+        <p>
+          The deck you draw from when you land on a tower. Click any card for
+          what it does and how many of it there are. When the draw pile runs out
+          the discards are shuffled and dealt again, so nothing leaves the game
+          for good.
+        </p>
+        <div id="tower-deck"></div>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="raven-deck-section">
+      <summary>The raven deck<span class="rule-section-blurb"><span data-deck-size="raven">…</span> cards</span></summary>
+      <div class="rule-section-body">
+        <p>
+          Drawn when you land on a watched square, which is most of the inner
+          ward. The card is dealt <strong>face-down</strong> and does nothing
+          until you turn it over — so the whole table sees what happened before
+          any piece moves. Only the player who drew it may flip it.
+        </p>
+        <p>
+          Grouped below by what they do, commonest first. Where several cards
+          share an effect they are listed separately, because the difference
+          between being summoned to the Bell Tower and to the Broad Arrow Tower
+          is the whole card.
+        </p>
+        <div id="raven-deck"></div>
+      </div>
+    </details>
+
+    <!-- ============================================================== -->
+    <details class="rule-section" id="winning">
+      <summary>Winning<span class="rule-section-blurb">two modes</span></summary>
+      <div class="rule-section-body">
+        <p>
+          <strong>Only stashed jewels count.</strong> A jewel in your pocket when
+          the game ends never left the Tower and scores nothing. The lobby picks
+          the mode before the game starts.
+        </p>
+
+        <h3>Fast</h3>
+        <p>The first player to stash a jewel — any jewel — wins on the spot.</p>
+
+        <h3>Slow</h3>
+        <p>Play runs until one of two things happens:</p>
+        <ul>
+          <li>
+            <strong>Somebody is beyond catching.</strong> With five jewels in
+            play, stashing three ends it: two is all anybody else could still
+            reach.
+          </li>
+          <li><strong>All five jewels have been stashed.</strong></li>
+        </ul>
+        <p>Then the count decides it, in this order:</p>
+        <ol>
+          <li>Most jewels stashed.</li>
+          <li>The grandest single jewel, if that ties.</li>
+          <li>Total value, if that ties too.</li>
+        </ol>
+        <p>
+          Jewels rank St Edward's Crown (5), the Prince of Wales's Crown (4), the
+          Sceptre (3), the Orb (2), the Sword (1).
+        </p>
+        <p>
+          Any player can also end the game early as a draw — the results screen
+          still comes up with everyone's haul.
+        </p>
+      </div>
+    </details>
+
+    <script type="module" src="/src/pages/rulebook.ts"></script>
+  </body>
+</html>

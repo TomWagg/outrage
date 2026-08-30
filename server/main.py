@@ -22,7 +22,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -493,6 +493,22 @@ def get_board() -> dict:
     return _json.loads(BOARD_FILE.read_text())
 
 
+@app.get("/api/cards")
+def get_cards() -> dict:
+    """Both decks as authored, for the rulebook's card browser.
+
+    Served rather than bundled into the page so the printed deck list and the
+    deck actually dealt from can never disagree — they are the same file, read
+    at request time.
+    """
+    import json as _json
+    from .server_state import RAVEN_CARDS_FILE, TOWER_CARDS_FILE
+    return {
+        "tower": _json.loads(TOWER_CARDS_FILE.read_text())["cards"],
+        "raven": _json.loads(RAVEN_CARDS_FILE.read_text())["cards"],
+    }
+
+
 @app.get("/api/stats")
 def get_stats() -> dict:
     return get_app().stats.model_dump()
@@ -503,12 +519,30 @@ def get_stats_for(username: str) -> dict:
     return get_app().stats.get(username).model_dump()
 
 
+#: The static information pages, served at both ``/rules`` and ``/rules.html``.
+#: The bare form is what the app links to; the ``.html`` form is what the Vite
+#: dev server uses, so the same link works either way.
+INFO_PAGES = ("about", "rules", "developers")
+
+
 if WEB_DIST.exists():
     app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
 
     @app.get("/")
     def index() -> FileResponse:
         return FileResponse(WEB_DIST / "index.html")
+
+    def _info_page(name: str) -> FileResponse:
+        page = WEB_DIST / f"{name}.html"
+        if not page.exists():
+            raise HTTPException(status_code=404, detail=f"{name}.html has not been built")
+        return FileResponse(page)
+
+    for _name in INFO_PAGES:
+        # Bind the name per iteration; a closure over the loop variable would
+        # leave every route serving the last page.
+        for _path in (f"/{_name}", f"/{_name}.html"):
+            app.get(_path)(lambda name=_name: _info_page(name))
 else:
     @app.get("/")
     def index_placeholder() -> dict:

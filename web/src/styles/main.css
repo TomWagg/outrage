@@ -1293,3 +1293,39 @@ input, select {
 .dice-sum-double {
   color: #f1c40f;
 }
+
+
+/* ---- lobby welcome ------------------------------------------------------ */
+/* Fills the space the board will occupy once a game starts. Doubles as the
+   only signpost to the information pages, so the links are part of it rather
+   than tucked into a corner. */
+
+.lobby-welcome { max-width: 26rem; text-align: center; }
+
+.lobby-welcome-title {
+  font-size: 2rem;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+}
+
+.lobby-welcome p { margin: 0 0 0.75rem; line-height: 1.5; }
+.lobby-welcome-hint { color: var(--muted); font-size: 0.9rem; }
+
+.lobby-welcome-links {
+  display: flex;
+  gap: 1.1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.lobby-welcome-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lobby-welcome-links a:hover { color: var(--accent); }

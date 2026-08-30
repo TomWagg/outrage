@@ -1,0 +1,408 @@
+/* Styling for the standalone information pages (about / rules / developers).
+ *
+ * These are read, not played, so they break from the game's dense panel layout:
+ * one measured column, generous line height, and headings that let you skim.
+ * The palette and typography come from main.css so the pages still feel like
+ * part of the same Tower — only the density changes.
+ */
+
+body.page {
+  /* A reading measure. The game chrome is edge-to-edge; prose is not. */
+  max-width: 54rem;
+  margin: 0 auto;
+  padding: 0 1.25rem 5rem;
+  line-height: 1.6;
+}
+
+/* ---- top bar ------------------------------------------------------------ */
+
+.page-nav {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 0 0.75rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2.5rem;
+}
+
+.page-nav .page-nav-home {
+  font-size: 1rem;
+  color: var(--accent);
+  text-decoration: none;
+  letter-spacing: 0.04em;
+}
+
+.page-nav .page-nav-home:hover { text-decoration: underline; }
+
+.page-nav-links {
+  display: flex;
+  gap: 0.9rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.page-nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.page-nav-links a:hover { color: var(--fg); }
+/* The page you are already on is marked rather than linked, so the bar tells
+   you where you are without needing a second cue. */
+.page-nav-links a[aria-current="page"] { color: var(--accent); }
+
+/* ---- headings and prose ------------------------------------------------- */
+
+.page h1 {
+  font-size: 2.1rem;
+  color: var(--accent);
+  margin: 0 0 0.4rem;
+  letter-spacing: 0.01em;
+}
+
+.page .page-standfirst {
+  font-size: 1.05rem;
+  color: var(--muted);
+  margin: 0 0 2.5rem;
+  font-style: italic;
+}
+
+.page h2 {
+  font-size: 1.35rem;
+  color: var(--accent);
+  margin: 2.75rem 0 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.page h3 {
+  font-size: 1.05rem;
+  margin: 1.75rem 0 0.5rem;
+  color: var(--fg);
+}
+
+.page p { margin: 0 0 1rem; }
+.page ul, .page ol { margin: 0 0 1rem; padding-left: 1.4rem; }
+.page li { margin-bottom: 0.4rem; }
+.page strong { color: var(--accent); font-weight: normal; }
+.page em { color: var(--fg); }
+
+.page a { color: var(--accent); }
+
+.page code {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.85em;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.05em 0.35em;
+}
+
+.page pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  margin: 0 0 1.25rem;
+}
+
+.page pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+/* A pull-out for the one thing on a page most likely to be missed. */
+.page-note {
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  padding: 0.75rem 1rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.92rem;
+}
+
+.page-note.is-warning { border-left-color: var(--danger); }
+
+/* ---- collapsible sections ----------------------------------------------- */
+
+.rule-section {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 0.6rem;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+/* <summary> is the click target. The default triangle is replaced with our own
+   so it can sit on the right and rotate, and so the whole row reads as a
+   button rather than as a list item. */
+.rule-section > summary {
+  cursor: pointer;
+  padding: 0.85rem 1.1rem;
+  font-size: 1.05rem;
+  color: var(--accent);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  user-select: none;
+}
+
+.rule-section > summary::-webkit-details-marker { display: none; }
+.rule-section > summary:hover { background: var(--panel-2); }
+.rule-section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.rule-section-blurb {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin-left: auto;
+  text-align: right;
+}
+
+.rule-section > summary::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: 0.8rem;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.rule-section[open] > summary::after { transform: rotate(180deg); }
+.rule-section[open] > summary { border-bottom: 1px solid var(--border); }
+
+.rule-section-body { padding: 1rem 1.1rem 0.4rem; }
+.rule-section-body > :last-child { margin-bottom: 0.75rem; }
+
+.rule-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.rule-toolbar button {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+}
+
+/* ---- at-a-glance table -------------------------------------------------- */
+
+.page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.25rem;
+  font-size: 0.92rem;
+}
+
+.page th, .page td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.page th { color: var(--muted); font-weight: normal; font-size: 0.82rem;
+           text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ---- card browser ------------------------------------------------------- */
+
+.card-browser-group { margin-bottom: 1.75rem; }
+
+.card-browser-group h4 {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 0.15rem;
+  font-weight: normal;
+}
+
+.card-browser-group .card-group-note {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.card-chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.7rem 0.5rem 0.55rem;
+  cursor: pointer;
+  text-align: center;
+  color: var(--fg);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.card-chip:hover { border-color: var(--accent); background: var(--panel); }
+.card-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card-chip[aria-expanded="true"] { border-color: var(--accent); background: var(--panel); }
+
+.card-chip-art { line-height: 0; color: var(--fg); }
+.card-chip-art svg { display: block; }
+
+.card-chip-name { font-size: 0.85rem; line-height: 1.25; }
+
+.card-chip-count {
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+/* The detail panel is a sibling of the grid rather than a child of the chip:
+   it spans the full width under the grid, so a long description doesn't
+   stretch one column and reflow the rest. */
+.card-detail {
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--panel);
+  padding: 0.9rem 1rem;
+  margin-top: 0.7rem;
+}
+
+.card-detail[hidden] { display: none; }
+
+.card-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.card-detail-title { font-size: 1.05rem; color: var(--accent); }
+
+.card-detail-meta {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: right;
+  line-height: 1.4;
+}
+
+.card-detail-body { font-size: 0.95rem; margin: 0; }
+
+.card-detail-stat {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.5rem 0 0;
+}
+
+@media (max-width: 34rem) {
+  .page-nav { gap: 0.5rem; }
+  .page-nav-links { margin-left: 0; width: 100%; }
+  .rule-section-blurb { display: none; }
+  .card-grid { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); }
+}
+
+/* ---- contents panel ------------------------------------------------------ */
+/*
+ * Fixed to the viewport rather than flowing with the page, so it stays put
+ * while you read. Its left edge tracks the centred content column: on a wide
+ * screen it lands in the empty margin beside the prose, and on a narrow one the
+ * max() floor stops it walking off the edge and it overlays instead. That is
+ * why it defaults to closed below the roomy breakpoint — overlaying the text is
+ * fine on demand, but not as the state you arrive in.
+ *
+ * Column geometry: content is 54rem wide and centred, so its left edge is at
+ * 50% - 27rem. Sitting a 13rem panel 1.25rem clear of that puts the panel's
+ * left edge at 50% - 41.25rem.
+ */
+
+.page-toc {
+  position: fixed;
+  top: 5.5rem;
+  left: max(0.75rem, calc(50% - 41.25rem));
+  width: 13rem;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  /* Never taller than the space below it, so a long list scrolls rather than
+     running off the bottom of the screen. */
+  max-height: calc(100vh - 7rem);
+}
+
+.page-toc-toggle {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.page-toc-toggle:hover { color: var(--fg); border-color: var(--accent); }
+.page-toc-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.page-toc-list {
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.35rem;
+  width: 100%;
+  /* The panel overlays the prose on narrower screens, so it needs to read as a
+     layer above the page rather than a hole in it. */
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.page-toc.is-open .page-toc-list { display: flex; }
+
+.page-toc-list a {
+  display: block;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 2px 2px 0;
+}
+
+.page-toc-list a:hover { color: var(--fg); background: var(--panel-2); }
+.page-toc-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The section you are currently reading. The rule down the left edge is the
+   marker; colour alone would be easy to miss against the muted list. */
+.page-toc-list a[aria-current="true"] {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--panel-2);
+}
+
+@media (max-width: 1319px) {
+  /* Overlaying, so the shadow and a slightly wider panel earn their keep. */
+  .page-toc { top: 4.5rem; }
+}
+
+@media (max-width: 34rem) {
+  .page-toc { top: auto; bottom: 0.75rem; left: 0.75rem; max-height: 70vh; }
+  .page-toc { flex-direction: column-reverse; }
+}

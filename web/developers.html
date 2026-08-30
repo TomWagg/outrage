@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Developer guide — Outrage!</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+    <link rel="stylesheet" href="/src/styles/pages.css" />
+  </head>
+  <body class="page">
+    <header id="page-nav"></header>
+
+    <h1>Developer guide</h1>
+    <p class="page-standfirst">
+      How the code is arranged, where to put a new feature, and how to get a
+      server running — on your laptop, or somewhere your friends can reach.
+    </p>
+
+    <h2>The shape of it</h2>
+
+    <p>
+      A Python game engine with a thin web front end. The server is
+      <strong>authoritative</strong>: the browser never decides anything. It
+      sends an <em>intent</em> ("I want to roll"), the engine validates it
+      against the current state, and every client gets back a list of events
+      plus a fresh snapshot. One server runs one game at a time.
+    </p>
+
+    <pre><code>Browser  ──intent──▶  main.py  ──▶  rules.apply(state, intent, board, rng)
+                          │                    │
+                          │                    ├─▶ movement.py   where can I go?
+                          │                    ├─▶ combat.py     who wins a fight?
+                          │                    └─▶ cards_effects.py  what does this card do?
+                          │
+        ◀──events + per-player snapshot──┘</code></pre>
+
+    <pre><code>server/
+  main.py            FastAPI app: the /ws endpoint, HTTP routes, lobby handlers
+  server_state.py    The singleton AppState — lobby, live game, board, RNG, saves
+  persistence.py     Atomic JSON save/load
+  stats.py           Lifetime per-username stats
+  game/
+    rules.py         THE RULE ENGINE. Every intent handler lives here.
+    state.py         Pydantic models. GameState is the whole world.
+    board.py         The board as a graph: neighbours, reachability, paths
+    board_schema.py  Pydantic models for data/board.json
+    movement.py      Pure "where could this player go?" — no state mutation
+    combat.py        The fight sub-state machine, as pure functions
+    cards_effects.py Registry of card effects, keyed by effect_key
+    cards.py         Card model, deck loading, the draw/discard pair
+    rng.py           Seeded RNG so games are reproducible from a save
+  net/
+    messages.py      The wire format (intent / ack / error / event / snapshot)
+    redact.py        Per-player snapshot redaction — you see your hand, not theirs
+    connection.py    One WebSocket, with a send lock
+    broadcast.py     Fan-out helpers
+
+web/src/
+  main.ts            Boot, WS routing, view switching
+  state.ts           TypeScript mirror of the server's snapshot shape
+  net/ws.ts          Reconnecting WS client with request/response matching
+  board/render.ts    The SVG board. Rebuilt wholesale on every update
+  ui/                One module per panel: controls, hand, log, combat, …
+  pages/             The static information pages you are reading now
+
+data/
+  board.json         Every square, its neighbours, and the rules block
+  tower_cards.json   The tower deck
+  raven_cards.json   The raven deck
+
+tests/               33 files, ~240 tests. Fast — the whole suite is under a second.</code></pre>
+
+    <h2>The five things worth knowing before you start</h2>
+
+    <ol>
+      <li>
+        <strong><code>rules.apply()</code> is the only door in.</strong> Every
+        action is <code>(name, payload)</code> → a handler in
+        <code>_INTENTS</code> → <code>(new_state, events)</code>. Handlers mutate
+        state in place, so <code>apply</code> runs them against a deep copy and
+        returns that. A handler that raises therefore discards its half-finished
+        work, and the caller's game is untouched.
+      </li>
+      <li>
+        <strong>Events are the narration; the snapshot is the truth.</strong>
+        Events drive toasts and the log. The snapshot drives everything else.
+        If a client needs to know something, it belongs on the snapshot.
+      </li>
+      <li>
+        <strong><code>data/board.json</code> is data, not documentation.</strong>
+        Everything in its <code>rules</code> block is read by the engine. If you
+        add a key there, add it to <code>BoardRules</code> in
+        <code>board_schema.py</code> <em>and</em> read it somewhere — an
+        undeclared key validates fine and does nothing, which is worse than an
+        error.
+      </li>
+      <li>
+        <strong>The state models forbid unknown fields.</strong> That catches
+        typos, at the cost of making the save file fragile. Removing a field is
+        survivable — the loader retries once, dropping keys the schema no longer
+        knows — but <em>renaming</em> one silently loses its value. Copy
+        <code>saves/current_game.json</code> aside before touching
+        <code>state.py</code>.
+      </li>
+      <li>
+        <strong>The client is a mirror, never an authority.</strong> Where the UI
+        decides whether to offer a button, it is duplicating a server rule, and
+        the two must agree. The card-play windows
+        (<code>POST_ROLL_PLAYABLE_EFFECTS</code> and friends) exist in both
+        <code>rules.py</code> and <code>controls.ts</code> for exactly this
+        reason, and each names the other.
+      </li>
+    </ol>
+
+    <h2>Where to add things</h2>
+
+    <table>
+      <thead><tr><th>You want to…</th><th>Go to</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Add a new card</td>
+          <td>
+            Add the entry to <code>data/tower_cards.json</code> or
+            <code>raven_cards.json</code> with an <code>effect_key</code>. Write a
+            <code>@register("your_key")</code> handler in
+            <code>cards_effects.py</code>. Add player-facing copy to
+            <code>ui/card_descriptions.ts</code> and artwork to
+            <code>ui/card_art.ts</code>. If it needs a play window or player
+            input, wire it in <code>controls.ts</code>.
+          </td>
+        </tr>
+        <tr>
+          <td>Add a square that does something</td>
+          <td>
+            Give the space an <code>action</code> in <code>board.json</code>, then
+            handle its <code>key</code> in <code>_dispatch_space_action</code>
+            (<code>rules.py</code>). Unknown keys log
+            <code>unhandled_space_action</code> rather than failing silently.
+          </td>
+        </tr>
+        <tr>
+          <td>Add a new player action</td>
+          <td>
+            Write <code>_intent_your_thing</code> in <code>rules.py</code>,
+            register it in <code>_INTENTS</code>, and send it from
+            <code>controls.ts</code>. The <code>/ws</code> router picks up
+            anything in <code>_INTENTS</code> automatically.
+          </td>
+        </tr>
+        <tr>
+          <td>Change how movement works</td>
+          <td>
+            <code>movement.py</code> for what counts as a legal destination;
+            <code>board.py</code> for the graph search underneath it.
+            <code>reachable()</code> is memoised on the board, so it is safe to
+            call repeatedly.
+          </td>
+        </tr>
+        <tr>
+          <td>Change the board</td>
+          <td>
+            <code>data/board.json</code>. The scripts in <code>tools/</code> are
+            one-off authoring helpers — read before reusing.
+          </td>
+        </tr>
+        <tr>
+          <td>Add a stat</td>
+          <td>
+            Lifetime stats: <code>stats.py</code> plus
+            <code>_update_stats_from_events</code> in <code>main.py</code>.
+            End-of-game stats: <code>GameStats</code> in <code>state.py</code>
+            plus <code>compute_game_stats</code> in <code>rules.py</code>, which
+            folds the event log rather than counting as it goes.
+          </td>
+        </tr>
+        <tr>
+          <td>Change what players can see of each other</td>
+          <td><code>net/redact.py</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="page-note">
+      <strong>Write the test first — they are cheap here.</strong> The engine is
+      pure enough that most rules can be tested in a dozen lines with a
+      hand-built <code>GameState</code>, and the whole suite runs in well under a
+      second. Look at <code>tests/test_rack_pardon_and_traps.py</code> for the
+      house style.
+    </div>
+
+    <h2>Running it</h2>
+
+    <h3>First time</h3>
+    <pre><code>conda create -n outrage python=3.12 -y
+conda activate outrage
+pip install -e .
+
+cd web &amp;&amp; npm install</code></pre>
+
+    <h3>Day to day</h3>
+    <p>Two terminals. The backend:</p>
+    <pre><code>conda activate outrage
+uvicorn server.main:app --reload --port 8000</code></pre>
+    <p>and the front end, which proxies <code>/ws</code> and <code>/api</code> to it:</p>
+    <pre><code>cd web &amp;&amp; npm run dev</code></pre>
+    <p>
+      Open <a href="http://localhost:5173">localhost:5173</a>. Vite reloads the
+      UI on save; <code>--reload</code> restarts the engine.
+    </p>
+
+    <div class="page-note is-warning">
+      <strong><code>--reload</code> plus a change to <code>state.py</code> is how
+      you lose a game in progress.</strong> The server re-validates
+      <code>saves/current_game.json</code> on every restart. Back it up before
+      touching the state models, and check it still loads afterwards.
+    </div>
+
+    <h3>Tests and types</h3>
+    <pre><code>python -m pytest tests/ -q      # the rule engine
+cd web &amp;&amp; npx tsc --noEmit      # the front end</code></pre>
+    <p>
+      The test suite redirects the save files to a temporary directory and
+      asserts afterwards that the real <code>saves/</code> was untouched, so
+      running it can never eat a live game.
+    </p>
+
+    <h3>One process, both halves</h3>
+    <p>
+      Build the front end and the backend serves it, so there is only one port
+      to think about. This is what you want for actually playing:
+    </p>
+    <pre><code>cd web &amp;&amp; npm run build
+cd .. &amp;&amp; uvicorn server.main:app --host 0.0.0.0 --port 8000</code></pre>
+    <p>
+      Everything is then on port 8000 — the game at <code>/</code>, these pages
+      at <code>/about</code>, <code>/rules</code> and <code>/developers</code>.
+    </p>
+
+    <h2>Playing with people elsewhere</h2>
+
+    <p>
+      <code>--host 0.0.0.0</code> makes the server reachable from other machines.
+      On the same network, that is all you need: find your machine's LAN address
+      and send people <code>http://&lt;your-ip&gt;:8000</code>.
+    </p>
+
+    <p>To play with people who are not on your network, put a tunnel in front of it:</p>
+
+    <pre><code># Cloudflare — no account needed for a throwaway URL
+cloudflared tunnel --url http://localhost:8000
+
+# or ngrok
+ngrok http 8000
+
+# or Tailscale, if everyone is already on your tailnet
+tailscale serve 8000</code></pre>
+
+    <p>
+      Each prints a public URL. Send it round, everyone picks a username, and the
+      first person to press <em>Start game</em> starts it.
+    </p>
+
+    <div class="page-note is-warning">
+      <strong>There is no authentication.</strong> Anyone with the URL can join,
+      chat, act as themselves, and end the game. Usernames are claimed on a
+      first-come basis, and reconnecting is done by typing the same name — so
+      anyone who knows a player's name can take over their seat. That is fine for
+      a link you send to five friends for an evening; it is not fine for a URL
+      you leave running in public. Take the tunnel down when you are finished.
+    </div>
+
+    <h3>Saves</h3>
+    <p>
+      <code>saves/current_game.json</code> holds the live game and is rewritten
+      after every action, so a restart picks up where you left off — including
+      the RNG state, which is why a saved game replays identically.
+      <code>saves/stats.json</code> holds lifetime per-username tallies. Delete
+      either to reset it; a file the server cannot read is renamed
+      <code>.bak</code> rather than being thrown away.
+    </p>
+
+    <h2>Conventions worth matching</h2>
+    <ul>
+      <li>
+        <strong>Comments say why, not what.</strong> The codebase leans on
+        explaining the reasoning behind a rule or a guard. Match the density of
+        the file you are in.
+      </li>
+      <li>
+        <strong><code>_ev(kind, **payload)</code> takes <code>kind</code>
+        positionally.</strong> Passing <code>kind=</code> in the payload
+        collides with it. Use another key.
+      </li>
+      <li>
+        <strong>All randomness goes through <code>Rng</code>.</strong> A game
+        must replay identically from its seed and saved RNG state.
+      </li>
+      <li>
+        <strong>Refusals are <code>RuleError</code>.</strong> Anything else
+        reaches the client as <code>internal</code>, which is the signal that
+        something genuinely broke.
+      </li>
+    </ul>
+
+    <script type="module">
+      import { renderPageNav } from "/src/pages/nav.ts";
+      import { mountToc } from "/src/pages/toc.ts";
+      renderPageNav("developers");
+      mountToc();
+    </script>
+  </body>
+</html>
