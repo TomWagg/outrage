@@ -3,9 +3,9 @@
 Every double is an even total, so under the plain "odd total = accredited" rule
 a double at Queen's House was an automatic failure. It now buys another go.
 
-The coin pile holds one more coin than there are players — enough that somebody
-always has to fight for the last one — and coins handed back (the Rack toll, a
-fight won by someone already carrying one) return to it.
+The coin pile holds exactly one coin per player, and coins handed back (a
+served Rack sentence, a fight won by someone already carrying one) return to
+it without ever overfilling it.
 """
 from __future__ import annotations
 
@@ -104,6 +104,10 @@ def test_the_coin_pile_is_one_bigger_than_the_table():
 
 
 def test_a_forfeited_coin_goes_back_on_the_pile_but_never_overfills_it():
+    """The Rack takes the coin into escrow; the pile only gets it back once the
+    sentence is served and the forfeit becomes permanent."""
+    from server.game.rules import _forfeit_rack_escrow
+
     p = PlayerState(username="p1", color="red", position=BOARD.data.start_space,
                     has_coin=True)
     state = GameState(mode="fast", players=[p], turn_order=["p1"])
@@ -112,9 +116,14 @@ def test_a_forfeited_coin_goes_back_on_the_pile_but_never_overfills_it():
 
     send_to_rack(state, p, BOARD)
     assert p.has_coin is False
-    assert state.coins_available == 2
+    assert state.coins_available == 1, "held in escrow, not yet back on the pile"
 
-    # A second return with the pile already full is a no-op, not a fifth coin.
+    _forfeit_rack_escrow(state, BOARD, p)
+    assert state.coins_available == 2
+    assert p.rack_escrow is None
+
+    # A second return with the pile already full is a no-op, not a third coin.
     p.has_coin = True
     send_to_rack(state, p, BOARD)
+    _forfeit_rack_escrow(state, BOARD, p)
     assert state.coins_available == 2

@@ -88,6 +88,9 @@ class PlayerState(BaseModel):
     # reaches them, so they get the bonus on their own turn, not the roller's.
     extra_turns_pending: int = 0
     connected: bool = True
+    #: Confiscated by the Rack and recoverable with a Rack Pardon. ``None``
+    #: whenever the player is not serving a Rack sentence.
+    rack_escrow: Optional["RackEscrow"] = None
     #: Jewels carried out through the Cradle Tower and stashed in the hideout.
     #: Safe forever — no fight or pickpocket can touch them — and the only
     #: jewels that score. ``jewels`` above is what is still in your pockets and
@@ -116,6 +119,31 @@ class PlayerState(BaseModel):
             if c.id == card_id:
                 return self.hand.pop(i)
         return None
+
+
+class RackEscrow(BaseModel):
+    """What the Rack has taken off a player but not yet destroyed.
+
+    The toll is levied the moment you are racked — the jewels, and then either
+    the coin or your whole hand — but a Rack Pardon undoes the whole sentence,
+    losses included. Holding the confiscated goods here rather than scattering
+    them back into the decks and onto the board means the pardon can hand them
+    straight back, and means nobody else can pick up a coin or draw a card that
+    is still, on paper, spoken for.
+
+    Released for good by :func:`~server.game.rules._release_from_rack` when the
+    sentence is served: cards to the discard, coin to the Devereux pile, jewels
+    back to the squares they started on.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    coin: bool = False
+    cards: list[Card] = Field(default_factory=list)
+    jewels: list[JewelId] = Field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (self.coin or self.cards or self.jewels)
 
 
 # ---------- warders ---------------------------------------------------------
@@ -195,10 +223,16 @@ class PendingCardChange(BaseModel):
 
 
 class PendingSplitSeven(BaseModel):
+    """A roll waiting to be dealt out between the roller and one opponent."""
+
     model_config = ConfigDict(extra="forbid")
 
     total: int = 7  # the roll being split: 7, or any total under Binary Disruption
     source: Literal["seven", "binary_disruption"] = "seven"
+    #: The leg sizes the roller may hand over. A seven splits any way at all
+    #: (1..6); a Binary Disruption may only deal out one of the two dice as
+    #: thrown, so a 5 and a 3 can be split 5/3 and no other way.
+    allowed_legs: list[int] = Field(default_factory=list)
     # username -> the leg sizes that would actually move them somewhere. A
     # player who is boxed in (an un-accredited piece parked on Queen's House,
     # say) can't be given any of the roll, so the client must not offer them —
@@ -315,9 +349,6 @@ class TurnContext(BaseModel):
     pending_split: Optional[PendingSplitSeven] = None
     pending_card_change: Optional[PendingCardChange] = None
     deferred_split_leg: Optional[DeferredSplitLeg] = None
-    # For ``binary_disruption`` and split-7: allow the roller to choose splits
-    # on an arbitrary roll; we record the effective total here.
-    binary_disruption_armed: bool = False
     # Set when a Disguise card is played pre-roll; allows the player to pass
     # through occupied Yeoman Warder posts for the remainder of this turn.
     disguise_used: bool = False

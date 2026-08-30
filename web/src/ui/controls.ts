@@ -350,6 +350,9 @@ function updateControls(
           const label = `${tags}${named(state, d)}${enemy ? ` (vs ${enemy})` : ""}`;
           row.appendChild(spaceButton(d, label, () => ws.send("choose_move_path", { username: you, destination: d }).catch(noop)));
         }
+        // The roll has landed but not yet been walked — the one window in which
+        // a Binary Disruption means anything.
+        renderPreRollCardButtons(pending, g, me, you, state, ws, POST_ROLL_PLAYABLE_EFFECTS);
       }
       break;
     }
@@ -610,8 +613,22 @@ function renderSplitSeven(
   // boxed in (an un-accredited piece stuck on Queen's House, say) simply
   // isn't offered, and a leg they can't use isn't either.
   const movable = split?.movable_targets ?? {};
+  // How the roll may be cut. A natural seven goes any way at all; a Binary
+  // Disruption deals out the two dice as thrown, one each, so its list is just
+  // those two numbers.
+  const byDice = split?.source === "binary_disruption";
+  const allowedOther = new Set<number>(
+    split?.allowed_legs?.length
+      ? split.allowed_legs
+      : Array.from({ length: total - 1 }, (_, i) => i + 1),
+  );
+  const lead = byDice
+    ? `<div><strong>Binary Disruption.</strong> Deal the dice out one each — ` +
+      `${[...allowedOther].sort((a, b) => a - b).join(" and ")}. ` +
+      `Whichever you keep, the other player takes the rest.</div>`
+    : `<div>Split the roll of <strong>${total}</strong> between yourself and another player.</div>`;
   pending.innerHTML = `
-    <div>Split the roll of <strong>${total}</strong> between yourself and another player.</div>
+    ${lead}
     <div style="margin-top:0.4rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
       <label>You take:
         <select id="split-nself" style="margin-left:0.25rem"></select>
@@ -636,9 +653,13 @@ function renderSplitSeven(
   const selTarget = pending.querySelector<HTMLSelectElement>("#split-target")!;
   const note = pending.querySelector<HTMLElement>("#split-note")!;
 
-  // Leg sizes somebody could use. total (= keep it all) is always available.
-  const usableOther = new Set<number>([0]);
-  for (const legs of Object.values(movable)) for (const n of legs) usableOther.add(n);
+  // Leg sizes somebody could actually use, intersected with what this split
+  // permits. Keeping the whole roll (other = 0) is an option for a seven but
+  // not for a Binary Disruption, which exists to hand a die over.
+  const usableOther = new Set<number>(byDice ? [] : [0]);
+  for (const legs of Object.values(movable)) {
+    for (const n of legs) if (allowedOther.has(n)) usableOther.add(n);
+  }
   for (let i = 1; i <= total; i++) {
     if (!usableOther.has(total - i)) continue;
     const o = document.createElement("option");
@@ -646,7 +667,11 @@ function renderSplitSeven(
     o.textContent = String(i);
     selSelf.appendChild(o);
   }
-  selSelf.value = String(total);
+  if (selSelf.options.length) {
+    // Default to keeping the most you may: the whole roll for a seven, the
+    // larger die for a Binary Disruption.
+    selSelf.value = selSelf.options[selSelf.options.length - 1].value;
+  }
 
   const refreshTargets = () => {
     const nother = total - Number(selSelf.value);
@@ -930,15 +955,16 @@ function labelFor(state: ClientState, spaceId: string): string {
 // Pre-roll card play
 // ---------------------------------------------------------------------------
 //
-// The engine accepts ``play_card_pre_roll`` in TURN_START / PRE_ROLL for tower
-// cards whose category isn't weapon/burglary.
+// The engine accepts ``play_card_pre_roll`` for tower cards whose category
+// isn't weapon/burglary, in whichever window the card belongs to — see the
+// three sets below.
 // Param shapes (see ``server/game/cards_effects.py``):
 //   tower_pass        -> { mode: "accredit" | "extra_turn" }
 //   sanctuary         -> {}
 //   disguise          -> {} (explicit play; implicit consumption elsewhere)
 //   firecrackers      -> {} (must be in white_tower)
 //   lasso             -> { target: <username> }
-//   binary_disruption -> {}
+//   binary_disruption -> {} (CHOOSING_PATH only)
 
 const PRE_ROLL_PLAYABLE_EFFECTS = new Set([
   "tower_pass",
@@ -946,7 +972,6 @@ const PRE_ROLL_PLAYABLE_EFFECTS = new Set([
   "disguise",
   "firecrackers",
   "lasso",
-  "binary_disruption",
   // Escape hatches for a locked-up player.
   "royal_pardon",
   "rack_pardon",
@@ -961,6 +986,14 @@ const SELF_RESCUE_EFFECTS = new Set([
   "rack_pardon",
   "traversal_beauchamp_escape",
   "disguise",
+]);
+
+// Mirrors POST_ROLL_PLAYABLE_EFFECTS in server/game/rules.py: played on a roll
+// that has landed but has not yet been walked, which is the CHOOSING_PATH
+// window. Binary Disruption deals out the dice you can see, so it is worthless
+// before the roll and impossible after it.
+const POST_ROLL_PLAYABLE_EFFECTS = new Set([
+  "binary_disruption",
 ]);
 
 // Mirrors POST_MOVE_PLAYABLE_EFFECTS in server/game/rules.py: what's still
@@ -1013,7 +1046,6 @@ function renderPreRollCardButtons(
   const atQueens = state.board && me.position === state.board.queens_house_space;
   const inWhiteTower =
     state.board?.spaces.find((s) => s.id === me.position)?.region === "white_tower";
-  const alreadyArmed = !!g.turn.binary_disruption_armed;
   const status = me.status;
   const confined = status === "IMPRISONED" || status === "TORTURED" || status === "RACKED";
   const atBeauchamp = state.board && me.position === state.board.beauchamp_tower_space;
@@ -1109,8 +1141,13 @@ function renderPreRollCardButtons(
         break;
       }
       case "binary_disruption": {
-        if (alreadyArmed) break;
-        wrap.appendChild(button(`Play ${card.name}`, () => send({})));
+        // Only reachable from the CHOOSING_PATH window; the roll it deals out
+        // is the one already showing on the dice.
+        const roll = g.turn.roll;
+        const label = roll.length === 2
+          ? `Play ${card.name} (deal out ${roll[0]} and ${roll[1]})`
+          : `Play ${card.name}`;
+        wrap.appendChild(button(label, () => send({})));
         break;
       }
       case "lasso": {

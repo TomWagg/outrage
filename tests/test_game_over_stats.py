@@ -52,7 +52,10 @@ def test_stats_are_folded_out_of_the_log():
     log(s, "jewel_acquired", player="alice", jewel="sword")
     log(s, "coin_picked_up", player="bob")
     log(s, "missed_turn", player="bob")
+    # Landing on the sender announces the trip; ``sent_to_rack`` is the one
+    # event every route onto the Rack emits, so it is what the tally counts.
     log(s, "rack_sender_triggered", player="bob", space="wt_13_11_rack_sender")
+    log(s, "sent_to_rack", player="bob", cause="rack_sender", penalty="hand")
     log(s, "combat_resolved", winner="alice", loser="bob", jewels_taken=["orb"])
 
     st = compute_game_stats(s)

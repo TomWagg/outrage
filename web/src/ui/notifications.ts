@@ -35,6 +35,7 @@ interface TradeModal {
   shortBy: number;
 }
 import { hideBoardTooltip } from "../board/render.js";
+import { afterReveals, revealsHeld } from "./reveal_gate.js";
 
 interface TowerModal {
   cardId: string;
@@ -69,6 +70,18 @@ export function mountNotifications(
   document.body.appendChild(overlay);
   const modalSlot = overlay.querySelector<HTMLElement>("#notif-modal-slot")!;
   const toastStack = overlay.querySelector<HTMLElement>("#notif-toast-stack")!;
+
+  /**
+   * Subscribe to a server event, but never fire ahead of the dice.
+   *
+   * Every notification in here narrates something the roll caused, so each one
+   * would otherwise announce the outcome while the dice are still tumbling.
+   * Routing them all through the reveal gate keeps the story in order without
+   * each handler having to remember.
+   */
+  function on(event: string, handler: (payload: any) => void): void {
+    ws.on(event, (p: any) => afterReveals(() => handler(p)));
+  }
 
   // ---- Tower modal queue (drawer only) -----------------------------------
   const towerQueue: TowerModal[] = [];
@@ -174,7 +187,7 @@ export function mountNotifications(
   }
 
   // ---- Event subscriptions -----------------------------------------------
-  ws.on("tower_card_drawn", (p: any) => {
+  on("tower_card_drawn", (p: any) => {
     const drawer = p?.player as string | undefined;
     if (!drawer) return;
     if (drawer === state.you) {
@@ -188,11 +201,11 @@ export function mountNotifications(
 
   // "Change a card" hands you a fresh tower card without a tower_card_drawn
   // event, so give it the same face-down-then-flip modal as any other draw.
-  ws.on("card_changed", (p: any) => {
+  on("card_changed", (p: any) => {
     if (p?.player === state.you && p?.drawn) pushTowerModal(String(p.drawn));
   });
 
-  ws.on("cards_redrawn", (p: any) => {
+  on("cards_redrawn", (p: any) => {
     const who = p?.player as string | undefined;
     if (!who) return;
     const givenCount = Number(p?.given_count ?? 0);
@@ -214,7 +227,7 @@ export function mountNotifications(
     }
   });
 
-  ws.on("mass_accretor_stole", (p: any) => {
+  on("mass_accretor_stole", (p: any) => {
     if (!p?.player) return;
     // Weapons are committed face-up, so naming the card is fair game.
     const name = String(p.card ?? "").split(":")[1]?.replace(/_/g, " ") || "a weapon";
@@ -225,25 +238,25 @@ export function mountNotifications(
     );
   });
 
-  ws.on("coin_picked_up", (p: any) => {
+  on("coin_picked_up", (p: any) => {
     if (!p?.player) return;
     const left = typeof p.remaining === "number" && typeof p.total === "number"
       ? ` (${p.remaining} of ${p.total} left)`
       : "";
     pushToast(`${p.player} picked up a coin! 💰${left}`, "good");
   });
-  ws.on("accreditation_retry", (p: any) => {
+  on("accreditation_retry", (p: any) => {
     if (p?.player)
       pushToast(`${p.player} rolled a double at Queen's House — another go.`, "info");
   });
-  ws.on("split_unavailable", (p: any) => {
+  on("split_unavailable", (p: any) => {
     if (p?.player)
       pushToast(`Nobody else can be moved — ${p.player} takes all ${p.total ?? 7}.`, "info");
   });
-  ws.on("summons_declined", (p: any) => {
+  on("summons_declined", (p: any) => {
     if (p?.player) pushToast(`${p.player} refused the summons — misses a turn.`, "bad");
   });
-  ws.on("accredited", (p: any) => {
+  on("accredited", (p: any) => {
     if (!p?.player) return;
     const via = p.via === "tower_pass"
       ? "with a Tower Pass"
@@ -254,18 +267,18 @@ export function mountNotifications(
           : "";
     pushToast(`${p.player} is now accredited ${via}`.trim() + ".", "good");
   });
-  ws.on("accreditation_failed", (p: any) => {
+  on("accreditation_failed", (p: any) => {
     if (p?.player) pushToast(`${p.player} failed accreditation — turn ends.`, "bad");
   });
-  ws.on("trying_accreditation", (p: any) => {
+  on("trying_accreditation", (p: any) => {
     if (p?.player) pushToast(`${p.player} approaches Queen's House.`, "info");
   });
 
-  ws.on("jewel_acquired", (p: any) => {
+  on("jewel_acquired", (p: any) => {
     if (p?.player && p?.jewel)
       pushToast(`${p.player} stole the ${prettyJewel(p.jewel)}! 💎`, "good", TOAST_LONG_TTL);
   });
-  ws.on("jewel_attempt", (p: any) => {
+  on("jewel_attempt", (p: any) => {
     if (!p?.player) return;
     if (p.success) return; // covered by jewel_acquired
     pushToast(
@@ -273,16 +286,16 @@ export function mountNotifications(
       "bad",
     );
   });
-  ws.on("jewel_auto_acquired", (p: any) => {
+  on("jewel_auto_acquired", (p: any) => {
     if (p?.player && p?.jewel)
       pushToast(`${p.player} grabbed a loose ${prettyJewel(p.jewel)}! 💎`, "good", TOAST_LONG_TTL);
   });
 
-  ws.on("combat_started", (p: any) => {
+  on("combat_started", (p: any) => {
     if (p?.attacker && p?.defender)
       pushToast(`Combat: ${p.attacker} attacks ${p.defender}.`, "info");
   });
-  ws.on("combat_resolved", (p: any) => {
+  on("combat_resolved", (p: any) => {
     if (!p?.winner) return;
     const jewels = Array.isArray(p.jewels_taken) ? p.jewels_taken.length : 0;
     const spoils: string[] = [];
@@ -301,7 +314,7 @@ export function mountNotifications(
       TOAST_LONG_TTL,
     );
   });
-  ws.on("sanctuary_taken", (p: any) => {
+  on("sanctuary_taken", (p: any) => {
     if (!p?.defender) return;
     pushToast(
       `${p.defender} flees to Sanctuary! Weapons spent all the same — ` +
@@ -312,43 +325,43 @@ export function mountNotifications(
     );
   });
 
-  ws.on("firecrackers", (p: any) => {
+  on("firecrackers", (p: any) => {
     const aff = Array.isArray(p?.affected) && p.affected.length
       ? ` On notice: ${p.affected.join(", ")}.`
       : "";
     pushToast(`Firecrackers in the White Tower!${aff}`, "raven", TOAST_LONG_TTL);
   });
-  ws.on("firecrackers_racked", (p: any) => {
+  on("firecrackers_racked", (p: any) => {
     if (p?.player)
       pushToast(`${p.player} stayed in the White Tower — off to the Rack.`, "bad", TOAST_LONG_TTL);
   });
-  ws.on("firecrackers_escaped", (p: any) => {
+  on("firecrackers_escaped", (p: any) => {
     if (p?.player) pushToast(`${p.player} slipped out of the White Tower.`, "good");
   });
 
-  ws.on("lassoed", (p: any) => {
+  on("lassoed", (p: any) => {
     if (p?.roper && p?.target)
       pushToast(`${p.roper} lassoed ${p.target}!`, "info");
   });
-  ws.on("metallicity", () => {
+  on("metallicity", () => {
     pushToast(`Metallicity! Jewels scattered across the Tower.`, "raven", TOAST_LONG_TTL);
   });
-  ws.on("pecked_by_ravens", (p: any) => {
+  on("pecked_by_ravens", (p: any) => {
     if (p?.player) pushToast(`${p.player} was pecked by ravens — to the hospital.`, "bad");
   });
-  ws.on("ghost", (p: any) => {
+  on("ghost", (p: any) => {
     if (p?.player) pushToast(`${p.player} was spooked by a ghost — Chapel Royal.`, "raven");
   });
-  ws.on("bowyer_questioning", (p: any) => {
+  on("bowyer_questioning", (p: any) => {
     if (p?.player) pushToast(`${p.player} hauled in for questioning at Bowyer Tower.`, "bad");
   });
-  ws.on("governors_tea", (p: any) => {
+  on("governors_tea", (p: any) => {
     if (p?.player) pushToast(`${p.player} summoned to Governor's tea.`, "info");
   });
-  ws.on("beauchamp_imprisonment", (p: any) => {
+  on("beauchamp_imprisonment", (p: any) => {
     if (p?.player) pushToast(`${p.player} imprisoned in Beauchamp Tower.`, "bad");
   });
-  ws.on("confined_on_landing", (p: any) => {
+  on("confined_on_landing", (p: any) => {
     if (!p?.player) return;
     const verb = p.status === "TORTURED" ? "hauled in for questioning at" : "locked up in";
     pushToast(
@@ -357,27 +370,32 @@ export function mountNotifications(
       TOAST_LONG_TTL,
     );
   });
-  ws.on("rack_sender_triggered", (p: any) => {
+  on("rack_sender_triggered", (p: any) => {
     if (p?.player)
       pushToast(`${p.player} is dragged off to the Rack!`, "bad", TOAST_LONG_TTL);
   });
-  ws.on("resting_on_bench", (p: any) => {
+  on("resting_on_bench", (p: any) => {
     if (p?.player) pushToast(`${p.player} rests on a bench — misses a turn.`, "info");
   });
-  ws.on("miss_turn_on_landing", (p: any) => {
+  on("miss_turn_on_landing", (p: any) => {
     if (p?.player)
       pushToast(`${p.player} stops at the ${p.label ?? "square"} — misses a turn.`, "info");
   });
-  ws.on("rack_expired", (p: any) => {
+  on("rack_expired", (p: any) => {
     if (p?.player) pushToast(`${p.player} is released from the Rack.`, "good");
   });
-  ws.on("rack_coin_lost", (p: any) => {
-    if (p?.player) pushToast(`${p.player} forfeited a coin on the Rack.`, "bad");
+  on("sent_to_rack", (p: any) => {
+    if (!p?.player) return;
+    const took: string[] = [];
+    if (Array.isArray(p.jewels) && p.jewels.length) took.push(`${p.jewels.length} jewel(s)`);
+    if (p.penalty === "coin") took.push("a coin");
+    else if (Number(p.cards_taken) > 0) took.push(`${p.cards_taken} card(s)`);
+    pushToast(
+      `${p.player} is taken to the Rack` + (took.length ? ` — ${took.join(" and ")} confiscated.` : "."),
+      "bad",
+    );
   });
-  ws.on("rack_hand_lost", (p: any) => {
-    if (p?.player) pushToast(`${p.player} lost ${p.count ?? 0} card(s) on the Rack.`, "bad");
-  });
-  ws.on("stopped_forfeit", (p: any) => {
+  on("stopped_forfeit", (p: any) => {
     if (p?.player) {
       const items: string[] = [];
       if (Array.isArray(p.jewels) && p.jewels.length) items.push(`${p.jewels.length} jewel(s)`);
@@ -388,13 +406,13 @@ export function mountNotifications(
       );
     }
   });
-  ws.on("clerk_tea", () => {
+  on("clerk_tea", () => {
     pushToast(`Clerk's tea exception — players sent to Queen's House.`, "raven");
   });
-  ws.on("disguise_played", (p: any) => {
+  on("disguise_played", (p: any) => {
     if (p?.player) pushToast(`${p.player} slipped past in disguise.`, "info");
   });
-  ws.on("pardoned", (p: any) => {
+  on("pardoned", (p: any) => {
     if (!p?.player) return;
     pushToast(
       p.pardon_kind === "rack"
@@ -405,11 +423,11 @@ export function mountNotifications(
       "good",
     );
   });
-  ws.on("framed", (p: any) => {
+  on("framed", (p: any) => {
     if (p?.framer && p?.framed)
       pushToast(`${p.framer} framed ${p.framed} with a Confession!`, "info");
   });
-  ws.on("jewels_banked", (p: any) => {
+  on("jewels_banked", (p: any) => {
     const n = Array.isArray(p?.jewels) ? p.jewels.length : 0;
     if (p?.player) pushToast(
       n
@@ -417,10 +435,10 @@ export function mountNotifications(
         : `${p.player} slipped out for a fresh hand.`,
       n ? "good" : "info", TOAST_LONG_TTL);
   });
-  ws.on("three_doubles_bloody_tower", (p: any) => {
+  on("three_doubles_bloody_tower", (p: any) => {
     if (p?.player) pushToast(`${p.player} rolled three doubles — off to the Bloody Tower.`, "bad");
   });
-  ws.on("weapons_surrendered", (p: any) => {
+  on("weapons_surrendered", (p: any) => {
     const n = p?.count ?? (p?.cards ?? []).length;
     if (p?.player && n > 0)
       pushToast(
@@ -432,7 +450,7 @@ export function mountNotifications(
   // the opponent, the opponent keeps the card they were handed. Either way the
   // card is new to you, so it gets the same face-down-then-flip reveal as a
   // draw. Everyone else just gets the toast.
-  ws.on("card_swapped", (p: any) => {
+  on("card_swapped", (p: any) => {
     if (p?.player === state.you) {
       if (p.received) pushTowerModal(String(p.received));
     } else if (p?.target === state.you) {
@@ -441,7 +459,7 @@ export function mountNotifications(
       pushToast(`${p.player} swapped a card with ${p.target}.`, "info");
     }
   });
-  ws.on("sent_to_space", (p: any) => {
+  on("sent_to_space", (p: any) => {
     if (!p?.player) return;
     const why = p.label ? `${p.label}: ` : "";
     pushToast(
@@ -450,14 +468,14 @@ export function mountNotifications(
       p.misses_turn ? "bad" : "info",
     );
   });
-  ws.on("miss_turn_queued", (p: any) => {
+  on("miss_turn_queued", (p: any) => {
     if (p?.player)
       pushToast(`${p.label ?? "Miss a turn"} — ${p.player} loses their next turn.`, "bad");
   });
   // Development aid: the engine emits this for any space ``action.key`` it has
   // no handler for. Without a toast an unimplemented action looks exactly like
   // a square that does nothing, which is how several gaps went unnoticed.
-  ws.on("unhandled_space_action", (p: any) => {
+  on("unhandled_space_action", (p: any) => {
     const which = p?.key ? `"${p.key}"` : "an action";
     pushToast(
       `Unimplemented space action: ${which}` + (p?.space ? ` on ${p.space}` : "") + `.`,
@@ -468,7 +486,7 @@ export function mountNotifications(
 
   // Re-render modal whenever ws sends a snapshot (raven notice may have
   // appeared/cleared) or whenever the WS state changes.
-  ws.on("__snapshot__", () => {
+  on("__snapshot__", () => {
     queueMicrotask(() => {
       renderModal();
       onChange();
@@ -476,11 +494,18 @@ export function mountNotifications(
   });
   // Also rerender on raven_card_drawn / dismissed for snappier feel — the
   // snapshot will follow but this avoids a flash.
-  ws.on("raven_card_drawn", () => queueMicrotask(renderModal));
-  ws.on("raven_notice_dismissed", () => queueMicrotask(renderModal));
+  on("raven_card_drawn", () => queueMicrotask(renderModal));
+  on("raven_notice_dismissed", () => queueMicrotask(renderModal));
 
   return {
     update: () => {
+      // The raven and confinement banners come from snapshot state rather than
+      // from an event, so they need the same hold — a raven card raised by the
+      // square you just landed on would otherwise appear before the dice stop.
+      if (revealsHeld()) {
+        afterReveals(renderModal);
+        return;
+      }
       renderModal();
     },
   };

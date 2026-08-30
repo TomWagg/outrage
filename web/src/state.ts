@@ -141,6 +141,9 @@ export interface PendingSplitSeven {
   /** username → the leg sizes that would actually move them. A player with no
    *  entry here can't be given any of the roll. */
   movable_targets: Record<string, number[]>;
+  /** The leg sizes the roller may hand over: any split for a natural seven,
+   *  but only the two dice as thrown for a Binary Disruption. */
+  allowed_legs?: number[];
 }
 
 export interface TurnContext {
@@ -154,7 +157,6 @@ export interface TurnContext {
   pending_jewel: PendingJewelAttempt | null;
   pending_split: PendingSplitSeven | null;
   pending_card_change: PendingCardChange | null;
-  binary_disruption_armed?: boolean;
 }
 
 export interface PendingJewelAttempt {

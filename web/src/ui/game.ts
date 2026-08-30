@@ -16,6 +16,7 @@ import { renderLogPanel } from "./log.js";
 import { renderCombatModal } from "./combat.js";
 import { renderGameOverScreen } from "./gameover.js";
 import { createDiceDisplay } from "./dice.js";
+import { holdReveals } from "./reveal_gate.js";
 
 export function renderGameLayout(
   root: HTMLElement,
@@ -160,11 +161,15 @@ export function renderGameLayout(
   //
   // The server resolves a roll and everything that follows from it in a single
   // intent, so one snapshot carries both the dice and their consequences. The
-  // dice are then animated for the best part of a second — and for that second
-  // the board and the controls panel must not give the number away by lighting
-  // up the squares it reaches. Both are held back until the animation settles,
-  // at which point the dice display calls us again.
+  // dice are then animated for the best part of a second, and for that second
+  // nothing else may give the number away: not the board lighting up the
+  // squares it reaches, not the controls panel listing them, and not a toast
+  // announcing what was found there.
+  //
+  // The board and the panel are held here; the toasts and modals are held
+  // through the shared reveal gate, which this is what releases.
   let prevRollKey = "";
+  let releaseReveals: (() => void) | null = null;
 
   const doUpdate = () => {
       updateStatus(root, state);
@@ -174,8 +179,14 @@ export function renderGameLayout(
       const newRoll = rollKey !== prevRollKey && roll.length === 2;
       if (newRoll) prevRollKey = rollKey;
 
-      // ``newRoll`` covers this pass, during which dice.roll hasn't started yet;
-      // ``dice.animating`` covers every re-render until it finishes.
+      // Take the hold on the same pass that spots the roll, before anything is
+      // rendered: the events that describe the outcome are already in flight.
+      if (newRoll && releaseReveals === null) {
+        releaseReveals = holdReveals();
+      }
+
+      // ``newRoll`` covers this pass, during which dice.roll hasn't started
+      // yet; ``dice.animating`` covers every re-render until it finishes.
       const diceRolling = newRoll || dice.animating;
 
       if (!diceRolling) {
@@ -195,6 +206,11 @@ export function renderGameLayout(
         dice.roll(roll[0], roll[1], () => {
           updateBoard(root, ws, state);
           controls.update(state, ws, { diceRolling: false });
+          // Last, so the queued toasts land on a board that already shows the
+          // move they are describing.
+          const release = releaseReveals;
+          releaseReveals = null;
+          release?.();
         });
       }
   };

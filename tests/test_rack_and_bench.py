@@ -63,15 +63,23 @@ def test_rack_sender_racks_the_player_for_three_turns():
 def test_rack_entry_costs_the_coin_when_one_is_held():
     player = make_player(RACK_SENDER)
     player.has_coin = True
+    player.jewels = ["sword"]
     player.hand = [dummy_card(1), dummy_card(2)]
     state = make_state(player)
+    coins_before = state.coins_available
 
     evs = _resolve_landing(state, BOARD, player)
+    ev = next(e for e in evs if e["kind"] == "sent_to_rack")
 
-    assert "rack_coin_lost" in kinds_of(evs)
+    assert ev["payload"]["penalty"] == "coin"
     assert not player.has_coin
-    # Coin paid, hand kept.
-    assert len(player.hand) == 2
+    assert len(player.hand) == 2          # coin paid, hand spared
+    assert player.jewels == []            # jewels go whatever the toll was
+    assert player.rack_escrow.coin is True
+    assert player.rack_escrow.jewels == ["sword"]
+    # Held, not destroyed: the coin does not go back on the pile while a Rack
+    # Pardon could still undo the sentence.
+    assert state.coins_available == coins_before
 
 
 def test_rack_entry_costs_the_whole_hand_without_a_coin():
@@ -80,11 +88,13 @@ def test_rack_entry_costs_the_whole_hand_without_a_coin():
     state = make_state(player)
 
     evs = _resolve_landing(state, BOARD, player)
-    ev = next(e for e in evs if e["kind"] == "rack_hand_lost")
+    ev = next(e for e in evs if e["kind"] == "sent_to_rack")
 
-    assert ev["payload"]["count"] == 2
+    assert ev["payload"]["penalty"] == "hand"
+    assert ev["payload"]["cards_taken"] == 2
     assert player.hand == []
-    assert len(state.tower_discard) == 2
+    assert len(player.rack_escrow.cards) == 2
+    assert state.tower_discard == []      # held in escrow, not discarded yet
 
 
 # ---------------------------------------------------------------------------

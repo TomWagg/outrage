@@ -76,8 +76,7 @@ def _log(state: GameState, evs: Iterable[dict[str, Any]]) -> None:
 # Events that put a player behind bars, for the "times locked up" tally.
 _LOCKUP_EVENTS = {
     "three_doubles_bloody_tower", "beauchamp_imprisonment", "bowyer_questioning",
-    "rack_sender_triggered", "firecrackers_racked", "stopped_forfeit",
-    "confined_on_landing",
+    "sent_to_rack", "stopped_forfeit", "confined_on_landing",
 }
 
 
@@ -229,6 +228,36 @@ def cancel_rest_if_moved_off(
     return [_ev("rest_interrupted", player=player.username, space=old_space)]
 
 
+def _forfeit_rack_escrow(
+    state: GameState, board: "Board", player: PlayerState,
+) -> list[dict[str, Any]]:
+    """Make the Rack's toll permanent: the sentence was served, not pardoned.
+
+    Up to this point the confiscated goods have only been held (see
+    :class:`~server.game.state.RackEscrow`), because a Rack Pardon would have
+    handed them straight back. Now they go for good — cards to the discard, the
+    coin back onto the Devereux pile for somebody else to find, and the jewels
+    back to the squares they started on, where they can be stolen again.
+    """
+    escrow = player.rack_escrow
+    if escrow is None:
+        return []
+    player.rack_escrow = None
+    if escrow.is_empty():
+        return []
+    state.tower_discard.extend(escrow.cards)
+    if escrow.coin:
+        state.coins_available = min(state.coins_total, state.coins_available + 1)
+    for jewel in escrow.jewels:
+        origin = board.data.initial_jewel_locations.get(jewel)
+        if origin:
+            state.jewels_available[jewel] = origin
+    return [_ev(
+        "rack_forfeit", player=player.username,
+        cards=len(escrow.cards), coin=escrow.coin, jewels=list(escrow.jewels),
+    )]
+
+
 def _release_from_rack(
     state: GameState, player: PlayerState, board: "Board",
 ) -> list[dict[str, Any]]:
@@ -237,10 +266,14 @@ def _release_from_rack(
     Clearing the status is not enough on its own: the Rack is a dead end, and a
     piece left standing on it is one forced step from the Rack Sender that
     would send it straight back down. The release moves the piece off as well.
+
+    Reaching the end of the sentence is also the moment the toll stops being
+    reversible — nothing can pardon a sentence that has already been served.
     """
     player.status = Status.NORMAL
     player.status_turns_remaining = 0
     evs = [_ev("rack_expired", player=player.username)]
+    evs.extend(_forfeit_rack_escrow(state, board, player))
     exit_space = board.rack_exit_space
     if exit_space and player.position == board.data.rack_space:
         src = player.position
@@ -248,6 +281,34 @@ def _release_from_rack(
         evs.append(_ev(
             "player_moved", player=player.username,
             src=src, dst=exit_space, move_kind="rack_release",
+        ))
+    return evs
+
+
+def _serve_missed_turn(
+    state: GameState, board: "Board", player: PlayerState,
+) -> list[dict[str, Any]]:
+    """Consume a missed turn, and step the player out if staying would trap them.
+
+    The Shop is the case this exists for: its only neighbour is the square whose
+    action sends you to the Shop, so a player who serves the missed turn and
+    stays put has exactly one legal move, straight back into another missed
+    turn. The board names the way out (``miss_turn_exit_spaces``); the landing
+    is deliberately *not* re-resolved, or stepping out would trigger the very
+    action being escaped.
+    """
+    player.miss_next_turn = False
+    if player.status == Status.HOSPITAL:
+        player.status = Status.NORMAL
+    evs = [_ev("missed_turn", player=player.username)]
+    exits = dict(getattr(board.data.rules, "miss_turn_exit_spaces", {}) or {})
+    dst = exits.get(player.position)
+    if dst and board.has_space(dst):
+        src = player.position
+        player.position = dst
+        evs.append(_ev(
+            "player_moved", player=player.username,
+            src=src, dst=dst, move_kind="rest_over",
         ))
     return evs
 
@@ -288,10 +349,7 @@ def _require_current_player(state: GameState, username: str) -> PlayerState:
 _CONFINEMENT_CAUSES = {
     "confined_on_landing": "landed",
     "three_doubles_bloody_tower": "three_doubles",
-    "rack_sender_triggered": "rack_sender",
-    "firecrackers_racked": "firecrackers",
     "beauchamp_imprisonment": "raven",
-    "rack_of_torment": "raven",
     "stopped_forfeit": "searched",
     "combat_resolved": "combat",
     "framed": "framed",
@@ -320,8 +378,14 @@ def _raise_confinement_notice(
         victim = newly[0]
         cause = ""
         for ev in events:
-            mapped = _CONFINEMENT_CAUSES.get(ev.get("kind", ""))
-            if mapped and ev.get("payload", {}).get("player") in (victim.username, None):
+            payload = ev.get("payload", {})
+            # The Rack is reached three ways and says which on the event itself,
+            # so it carries its cause rather than needing one entry per route.
+            mapped = (
+                payload.get("cause") if ev.get("kind") == "sent_to_rack"
+                else _CONFINEMENT_CAUSES.get(ev.get("kind", ""))
+            )
+            if mapped and payload.get("player") in (victim.username, None):
                 cause = mapped
                 break
         state.active_confinement_notice = ConfinementNotice(
@@ -445,6 +509,16 @@ POST_MOVE_PLAYABLE_EFFECTS = frozenset({
 })
 
 
+#: Effects that need a roll on the table but not yet spent — the ``CHOOSING_PATH``
+#: window, and nothing else.
+#:
+#: Binary Disruption deals out the dice you have just thrown, so it is worthless
+#: before the roll and impossible after it has been walked. To guarantee the
+#: window exists at all, ``_enter_movement_phase`` declines to auto-commit a
+#: forced move while the roller is holding one.
+POST_ROLL_PLAYABLE_EFFECTS = frozenset({"binary_disruption"})
+
+
 #: Cards a locked-up player may play at any time, on their turn or off it.
 #:
 #: These only ever act on their owner, and the Rack in particular gives them no
@@ -486,17 +560,27 @@ def _intent_play_card_pre_roll(state, payload, *, board, rng):
     if state.phase in _NO_CARD_PLAY_PHASES:
         raise RuleError(f"Cannot play cards during {state.phase.value}")
     if not (player.confined and card.effect_key in SELF_RESCUE_EFFECTS):
-        _require_phase(state, Phase.TURN_START, Phase.PRE_ROLL, Phase.TURN_END)
+        _require_phase(
+            state, Phase.TURN_START, Phase.PRE_ROLL,
+            Phase.CHOOSING_PATH, Phase.TURN_END,
+        )
         _require_current_player(state, username)
-    # Only certain categories are playable pre-roll.
     if card.kind != "tower":
-        raise RuleError("Only tower cards are played pre-roll")
+        raise RuleError("Only tower cards are played from hand this way")
     if card.category in ("weapon", "burglary"):
-        raise RuleError(f"Cannot play {card.name} pre-roll")
+        raise RuleError(f"{card.name} is not played from hand like that")
     if card.effect_key is None:
         raise RuleError(f"Card {card.name} has no effect")
-    if state.phase == Phase.TURN_END and card.effect_key not in POST_MOVE_PLAYABLE_EFFECTS:
-        raise RuleError(f"{card.name} must be played before you roll")
+    # Each window admits its own set, so a card can't be played at a moment
+    # where it would either do nothing or undo something already settled.
+    if state.phase == Phase.CHOOSING_PATH:
+        if card.effect_key not in POST_ROLL_PLAYABLE_EFFECTS:
+            raise RuleError(f"{card.name} cannot be played mid-move")
+    elif state.phase == Phase.TURN_END:
+        if card.effect_key not in POST_MOVE_PLAYABLE_EFFECTS:
+            raise RuleError(f"{card.name} must be played before you roll")
+    elif card.effect_key in POST_ROLL_PLAYABLE_EFFECTS:
+        raise RuleError(f"{card.name} is played after you roll, not before")
     # Remove card first so dispatch can't see it in hand.
     player.remove_card(card_id)
     state.tower_discard.append(card)
@@ -596,13 +680,10 @@ def _intent_roll_dice(state, payload, *, board, rng):
 
     # Confinement / miss turn checks.
     if player.miss_next_turn:
-        player.miss_next_turn = False
-        # Hospital auto-clears on the missed turn.
-        if player.status == Status.HOSPITAL:
-            player.status = Status.NORMAL
+        evs = _serve_missed_turn(state, board, player)
         state.phase = Phase.TURN_END
-        _log(state, [_ev("missed_turn", player=player.username)])
-        return state, [_ev("missed_turn", player=player.username)]
+        _log(state, evs)
+        return state, evs
 
     if player.status in (Status.IMPRISONED, Status.TORTURED, Status.RACKED):
         # Must roll a double to escape (except Rack — rolling doesn't help).
@@ -685,27 +766,15 @@ def _intent_roll_dice(state, payload, *, board, rng):
         # Regular double: grant an extra roll at the end of this turn.
         state.turn.extra_turns_queued += 1
 
-    # Binary disruption or split-7?
-    if state.turn.binary_disruption_armed or total == 7:
-        movable = _split_movable_targets(state, board, player, total)
-        if movable:
-            state.phase = Phase.SPLIT_SEVEN_ASSIGN
-            state.turn.pending_split = PendingSplitSeven(
-                total=total,
-                source="binary_disruption" if state.turn.binary_disruption_armed else "seven",
-                movable_targets=movable,
-            )
-            state.turn.binary_disruption_armed = False
-            evs.append(_ev(
-                "split_assign_required", total=total,
-                movable_targets={k: list(v) for k, v in movable.items()},
-            ))
+    # A seven is split however the roller likes. (Binary Disruption also lands
+    # here, but as a card played after this roll — see ``_arm_split``.)
+    if total == 7:
+        split_evs = _arm_split(state, board, player, total, "seven",
+                               allowed_legs=list(range(1, total)))
+        evs.extend(split_evs)
+        if state.phase == Phase.SPLIT_SEVEN_ASSIGN:
             _log(state, evs)
             return state, evs
-        # Nobody can be given any part of the roll (everyone else is boxed in),
-        # so there is nothing to split — the roller takes the lot.
-        state.turn.binary_disruption_armed = False
-        evs.append(_ev("split_unavailable", player=player.username, total=total))
 
     # Normal movement path.
     evs.extend(_enter_movement_phase(state, board, player, total))
@@ -713,17 +782,92 @@ def _intent_roll_dice(state, payload, *, board, rng):
     return state, evs
 
 
+def _arm_split(
+    state: GameState,
+    board: Board,
+    roller: PlayerState,
+    total: int,
+    source: str,
+    *,
+    allowed_legs: list[int],
+) -> list[dict[str, Any]]:
+    """Offer the roll as a split, if anybody can actually be given part of it.
+
+    ``allowed_legs`` is what the roller may hand over: any amount for a seven,
+    but only one of the two dice for a Binary Disruption — that card rearranges
+    the roll, it doesn't re-add it, so a 5 and a 3 can be dealt out as 5/3 and
+    nothing else.
+
+    Leaves the phase at ``SPLIT_SEVEN_ASSIGN`` when the split is on. When no
+    opponent can be moved by any allowed leg there is nothing to split, so the
+    caller carries on with the roller taking the whole roll.
+    """
+    movable = _split_movable_targets(state, board, roller, total,
+                                     allowed_legs=allowed_legs)
+    if not movable:
+        return [_ev("split_unavailable", player=roller.username, total=total)]
+    state.phase = Phase.SPLIT_SEVEN_ASSIGN
+    state.turn.pending_split = PendingSplitSeven(
+        total=total, source=source, movable_targets=movable,
+        allowed_legs=sorted(set(allowed_legs)),
+    )
+    return [_ev(
+        "split_assign_required", total=total, source=source,
+        allowed_legs=sorted(set(allowed_legs)),
+        movable_targets={k: list(v) for k, v in movable.items()},
+    )]
+
+
+def arm_binary_disruption(
+    state: GameState, player: PlayerState, *, board: Board,
+) -> list[dict[str, Any]]:
+    """Turn the roll already on the table into a two-die split.
+
+    Public because ``cards_effects`` calls it (via a deferred import) for the
+    Binary Disruption card. Raises :class:`~.cards_effects.EffectError` rather
+    than spending the card when the roll can't be dealt out, which puts it back
+    in the player's hand.
+    """
+    from .cards_effects import EffectError
+
+    roll = list(state.turn.roll)
+    if len(roll) != 2:
+        raise EffectError("Roll the dice before playing Binary Disruption")
+    if state.turn.pending_move is None and state.phase != Phase.CHOOSING_PATH:
+        raise EffectError("Too late — that roll has already been spent")
+    total = sum(roll)
+    evs = _arm_split(state, board, player, total, "binary_disruption",
+                     allowed_legs=roll)
+    if state.phase != Phase.SPLIT_SEVEN_ASSIGN:
+        raise EffectError(
+            f"Nobody can be moved {roll[0]} or {roll[1]} squares from where they stand"
+        )
+    # The pending move was built for the whole roll; the split replaces it.
+    state.turn.pending_move = None
+    return [_ev(
+        "binary_disruption_played", player=player.username, roll=roll,
+    )] + evs
+
+
 def _split_movable_targets(
     state: GameState, board: Board, roller: PlayerState, total: int,
+    *, allowed_legs: Optional[list[int]] = None,
 ) -> dict[str, list[int]]:
     """Opponents who could actually be moved by part of a split roll.
 
-    Maps username → the leg sizes (1..total-1) that give them at least one legal
-    destination. An un-accredited piece parked on Queen's House is the case that
-    prompted this: the wall walk is forward-only and dead-ends there, so no leg
-    size moves them anywhere and offering them as a split target would silently
-    burn the roller's steps.
+    Maps username → which leg sizes give them at least one legal destination. An
+    un-accredited piece parked on Queen's House is the case that prompted this:
+    the wall walk is forward-only and dead-ends there, so no leg size moves them
+    anywhere and offering them as a split target would silently burn the
+    roller's steps.
+
+    ``allowed_legs`` narrows the sizes considered; it defaults to every split of
+    ``total``, which is what a natural seven allows.
     """
+    legs_to_try = sorted({
+        n for n in (allowed_legs if allowed_legs is not None else range(1, total))
+        if 0 < n < total
+    })
     blocked = _warder_blocked_spaces(state, board)
     movable: dict[str, list[int]] = {}
     for p in state.players:
@@ -741,7 +885,7 @@ def _split_movable_targets(
             continue
         others = [q.position for q in state.players if q.username != p.username]
         legs = [
-            n for n in range(1, total)
+            n for n in legs_to_try
             if compute_destinations(
                 board, p.position, n, p,
                 other_player_positions=others,
@@ -783,7 +927,13 @@ def _enter_movement_phase(state: GameState, board: Board, player: PlayerState, s
         destinations=opts.destinations,
         requires_disguise=sorted(opts.requires_disguise),
     )
-    if opts.forced_single and (only := opts.only_destination()):
+    # A Binary Disruption is played on a roll that has landed but not yet been
+    # walked, so auto-committing the walk would take that window away from a
+    # player holding one. Stopping to ask costs a click and preserves the card.
+    holds_disruption = any(
+        c.effect_key == "binary_disruption" for c in player.hand
+    )
+    if opts.forced_single and not holds_disruption and (only := opts.only_destination()):
         # Auto-commit.
         return _commit_move(state, board, player, only, opts.destinations[only])
     state.phase = Phase.CHOOSING_PATH
@@ -1540,7 +1690,16 @@ def _intent_assign_split_seven(state, payload, *, board, rng):
         raise RuleError("n_self + n_other must equal total")
     if n_self < 0 or n_other < 0:
         raise RuleError("Non-negative splits required")
+    allowed = split.allowed_legs or list(range(1, split.total))
+    if split.source == "binary_disruption" and n_other == 0:
+        # The card deals the two dice out one each; keeping both is not one of
+        # the things it does.
+        raise RuleError("Binary Disruption must hand one of the two dice to somebody")
     if n_other > 0:
+        if n_other not in allowed:
+            raise RuleError(
+                f"This roll can only be split {' or '.join(str(a) for a in sorted(set(allowed)))}"
+            )
         # Only hand steps to someone the roll can actually move — otherwise the
         # steps vanish and the roller has quietly thrown part of their turn away.
         legs = split.movable_targets.get(target_name or "")
@@ -2177,16 +2336,13 @@ def _intent_end_turn(state, payload, *, board, rng):
         try:
             ender = state.player(username)
             if ender.miss_next_turn and state.phase in (Phase.TURN_START, Phase.PRE_ROLL):
-                ender.miss_next_turn = False
-                if ender.status == Status.HOSPITAL:
-                    ender.status = Status.NORMAL
                 # PRE_ROLL counts as well as TURN_START: playing a card before
                 # rolling moves the phase on, and that must not let the miss
                 # slip past unconsumed. Extra turns already banked survive it —
                 # a Tower Pass bought a real turn, and the forced miss is not
                 # the turn it bought.
                 state.phase = Phase.TURN_END
-                pre_evs.append(_ev("missed_turn", player=ender.username))
+                pre_evs.extend(_serve_missed_turn(state, board, ender))
                 # Fall through to the normal end-of-turn advance below.
             elif state.phase == Phase.TURN_START and ender.status in (
                 Status.RACKED, Status.IMPRISONED, Status.TORTURED,
@@ -2233,28 +2389,12 @@ def _intent_end_turn(state, payload, *, board, rng):
     if outgoing_name in state.firecrackers_affected:
         state.firecrackers_affected.remove(outgoing_name)
         if board.space(outgoing.position).region == "white_tower":
-            src = outgoing.position
-            outgoing.position = board.data.rack_space
-            outgoing.status = Status.RACKED
-            outgoing.status_turns_remaining = 3
-            if outgoing.has_coin:
-                outgoing.has_coin = False
-                state.coins_available = min(state.coins_total, state.coins_available + 1)
-                penalty = "coin"
-                lost = 0
-            else:
-                lost = len(outgoing.hand)
-                state.tower_discard.extend(outgoing.hand)
-                outgoing.hand = []
-                penalty = "hand"
-            fc_events.append(_ev(
-                "player_moved", player=outgoing_name,
-                src=src, dst=outgoing.position, move_kind="firecrackers_rack",
-            ))
-            fc_events.append(_ev(
-                "firecrackers_racked", player=outgoing_name,
-                penalty=penalty, cards_discarded=lost,
-            ))
+            # Same toll, same escrow, same chance of a Rack Pardon as any other
+            # route onto the Rack — hence the shared helper rather than a
+            # second copy of the rules here.
+            from .cards_effects import send_to_rack as _send_to_rack
+            fc_events.append(_ev("firecrackers_racked", player=outgoing_name))
+            fc_events.extend(_send_to_rack(state, outgoing, board, cause="firecrackers"))
 
     # Advance to the next player. Nobody ever leaves the table — using the exit
     # puts you back on the start square rather than out of the game — so this

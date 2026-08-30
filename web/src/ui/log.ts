@@ -151,6 +151,11 @@ function jewel(id: unknown): string {
   return JEWEL_NAMES[id] ?? id.replace(/_/g, " ");
 }
 
+/** A list of jewels by name — "the Orb and St Edward's Crown". */
+function jewelList(ids: unknown): string {
+  return list(Array.isArray(ids) ? ids.map(jewel).filter(Boolean) : []);
+}
+
 // ---- the formatter ----------------------------------------------------------
 
 /**
@@ -245,8 +250,13 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
     case "split_unavailable":
       return `No other player can be moved, so ${p.player} keeps all ` +
         `${p.total ?? 7} steps.`;
-    case "binary_disruption_armed":
-      return `${p.player} plays Binary Disruption — the next roll will be split.`;
+    case "binary_disruption_played": {
+      const roll = Array.isArray(p.roll) ? p.roll : [];
+      return `${p.player} plays Binary Disruption` +
+        (roll.length === 2
+          ? ` and deals the roll out — ${roll[0]} to one player, ${roll[1]} to the other.`
+          : " and deals the roll out between two players.");
+    }
 
     // ---- cards --------------------------------------------------------------
     case "tower_card_drawn":
@@ -430,10 +440,25 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
           : ".");
     case "rest_interrupted":
       return `${p.player} is hauled off ${at(p.space)} and no longer misses a turn.`;
-    case "rack_coin_lost":
-      return `${p.player} forfeits a coin to the Rack.`;
-    case "rack_hand_lost":
-      return `${p.player} forfeits their hand to the Rack.`;
+    case "sent_to_rack": {
+      // The toll is only taken into custody here — a Rack Pardon still gets it
+      // all back, so this says "surrenders", not "loses".
+      const took: string[] = [];
+      if (Array.isArray(p.jewels) && p.jewels.length) took.push(jewelList(p.jewels));
+      if (p.penalty === "coin") took.push("a coin");
+      else if (Number(p.cards_taken) > 0) took.push(plural(Number(p.cards_taken), "card"));
+      return `${p.player} is strapped to the Rack` +
+        (took.length ? `, surrendering ${list(took)}.` : ".");
+    }
+    case "rack_forfeit": {
+      const gone: string[] = [];
+      if (Array.isArray(p.jewels) && p.jewels.length) gone.push(jewelList(p.jewels));
+      if (p.coin) gone.push("a coin");
+      if (Number(p.cards) > 0) gone.push(plural(Number(p.cards), "card"));
+      return gone.length
+        ? `The Tower keeps ${list(gone)} taken from ${p.player}.`
+        : "";
+    }
     case "confinement_escaped":
       return `${p.player} rolls a double and walks free.`;
     case "confinement_expired":
@@ -443,10 +468,19 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
     case "three_doubles_bloody_tower":
       return `${p.player} rolls a third double in a row and is taken to the ` +
         `Bloody Tower.`;
-    case "pardoned":
-      return p.pardon_kind === "rack"
-        ? `${p.player} produces a Rack Pardon and is released.`
-        : `${p.player} produces a Royal Pardon and is released.`;
+    case "pardoned": {
+      if (p.pardon_kind !== "rack") {
+        return `${p.player} produces a Royal Pardon and is released.`;
+      }
+      const back: string[] = [];
+      if (Array.isArray(p.jewels_returned) && p.jewels_returned.length) {
+        back.push(jewelList(p.jewels_returned));
+      }
+      if (p.coin_returned) back.push("their coin");
+      if (Number(p.cards_returned) > 0) back.push(plural(Number(p.cards_returned), "card"));
+      return `${p.player} produces a Rack Pardon and walks free` +
+        (back.length ? `, with ${list(back)} handed straight back.` : ".");
+    }
     case "disguise_played":
       return p.via === "move"
         ? `${p.player} puts on a Disguise and slips past the Yeoman Warder.`
@@ -520,12 +554,8 @@ function formatEntry(e: LogEntry, ctx: Ctx): string {
     case "firecrackers_escaped":
       return `${p.player} gets clear of the White Tower in time.`;
     case "firecrackers_racked":
-      return `${p.player} is still in the White Tower and is taken to the Rack` +
-        (p.penalty === "coin"
-          ? ", forfeiting a coin."
-          : p.penalty === "hand"
-            ? `, forfeiting ${plural(Number(p.cards_discarded ?? 0), "card")}.`
-            : ".");
+      // The toll itself is narrated by the ``sent_to_rack`` line that follows.
+      return `${p.player} is still in the White Tower when the firecrackers go off.`;
 
     // ---- the Cradle Tower ---------------------------------------------------
     case "jewels_banked": {

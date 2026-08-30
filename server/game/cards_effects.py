@@ -35,6 +35,7 @@ from .state import (
     PendingSplitSeven,
     PlayerState,
     Phase,
+    RackEscrow,
     Status,
 )
 
@@ -126,25 +127,58 @@ def _clear_confinement(player: PlayerState) -> None:
     player.status_turns_remaining = 0
 
 
-def send_to_rack(state: GameState, player: PlayerState, board: Board) -> EventList:
-    """Put ``player`` on the Rack for 3 turns and take the entry toll.
+#: How many turns a Rack sentence runs for.
+RACK_TURNS = 3
 
-    The toll is the coin if they hold one, otherwise their whole hand. Shared by
-    the ``rack_of_torment`` raven card and by landing on a ``rack_sender``
-    square, so the two can't drift apart.
+
+def send_to_rack(
+    state: GameState, player: PlayerState, board: Board, cause: str = "rack_sender",
+) -> EventList:
+    """Put ``player`` on the Rack for three turns and take the entry toll.
+
+    The toll is every jewel they are carrying, plus *either* the coin, if they
+    hold one, *or* their whole hand. The single entry point for all three routes
+    onto the Rack — the ``rack_of_torment`` raven card, landing on a
+    ``rack_sender`` square, and Firecrackers — so they can't drift apart.
+
+    Nothing is destroyed here. The confiscated goods go into
+    :class:`~server.game.state.RackEscrow`, because a Rack Pardon reverses the
+    whole sentence: see :func:`~server.game.rules._release_from_rack` for the
+    point at which the loss becomes permanent instead.
+
+    A Rack Pardon in the hand is the one thing the toll leaves behind. Taking it
+    would confiscate the only answer to the very sentence being handed down, and
+    a card that cannot be played at the one moment it is for is not a card.
     """
     evs = _send_to(state, player, board.data.rack_space, board)
     player.status = Status.RACKED
-    player.status_turns_remaining = 3
+    player.status_turns_remaining = RACK_TURNS
+    # A second sentence before the first is served adds to the same pile rather
+    # than replacing it, or the earlier haul would be lost with no way back.
+    escrow = player.rack_escrow or RackEscrow()
+
+    jewels = list(player.jewels)
+    escrow.jewels.extend(jewels)
+    player.jewels = []
+
     if player.has_coin:
         player.has_coin = False
-        state.coins_available = min(state.coins_total, state.coins_available + 1)
-        evs.append(_event("rack_coin_lost", player=player.username))
+        escrow.coin = True
+        penalty, lost_cards = "coin", 0
     else:
-        lost = player.hand
-        player.hand = []
-        state.tower_discard.extend(lost)
-        evs.append(_event("rack_hand_lost", player=player.username, count=len(lost)))
+        kept = [c for c in player.hand if c.effect_key == "rack_pardon"]
+        taken = [c for c in player.hand if c.effect_key != "rack_pardon"]
+        lost_cards = len(taken)
+        escrow.cards.extend(taken)
+        player.hand = kept
+        penalty = "hand"
+
+    player.rack_escrow = escrow
+    evs.append(_event(
+        "sent_to_rack", player=player.username, cause=cause,
+        penalty=penalty, jewels=jewels, cards_taken=lost_cards,
+        turns=RACK_TURNS,
+    ))
     return evs
 
 
@@ -221,16 +255,40 @@ def _royal_pardon(state, player, params, *, board, rng, **kw):
 
 @register("rack_pardon")
 def _rack_pardon(state, player, params, *, board, rng, **kw):
-    if player.status == Status.RACKED:
-        _clear_confinement(player)
-        evs = [_event("pardoned", player=player.username, pardon_kind="rack")]
-        # Walk them out of the cell as well — the Rack is a dead end and being
-        # left standing on it is one forced step from being sent back down.
-        exit_space = board.rack_exit_space
-        if exit_space and player.position == board.data.rack_space:
-            evs.extend(_send_to(state, player, exit_space, board))
-        return state, evs
-    raise EffectError("Rack Pardon only works for the Rack")
+    """Tear up a Rack sentence: everything confiscated comes back, and you walk.
+
+    The whole point of the card is that the Rack costs you nothing, so the
+    escrow is handed back before the status is cleared — the jewels, and the
+    coin or the hand, whichever the toll took.
+    """
+    if player.status != Status.RACKED:
+        raise EffectError("Rack Pardon only works for the Rack")
+    escrow = player.rack_escrow
+    returned_jewels: list[JewelId] = []
+    returned_cards = 0
+    returned_coin = False
+    if escrow is not None:
+        returned_jewels = list(escrow.jewels)
+        player.jewels.extend(returned_jewels)
+        returned_cards = len(escrow.cards)
+        for card in escrow.cards:
+            player.add_card(card)
+        returned_coin = escrow.coin
+        if returned_coin:
+            player.has_coin = True
+        player.rack_escrow = None
+    _clear_confinement(player)
+    evs = [_event(
+        "pardoned", player=player.username, pardon_kind="rack",
+        jewels_returned=returned_jewels, cards_returned=returned_cards,
+        coin_returned=returned_coin,
+    )]
+    # Walk them out of the cell as well — the Rack is a dead end and being
+    # left standing on it is one forced step from being sent back down.
+    exit_space = board.rack_exit_space
+    if exit_space and player.position == board.data.rack_space:
+        evs.extend(_send_to(state, player, exit_space, board))
+    return state, evs
 
 
 @register("confession")
@@ -336,14 +394,20 @@ def _lasso(state, player, params, *, board, rng, **kw):
 
 @register("binary_disruption")
 def _binary_disruption(state, player, params, *, board, rng, **kw):
-    """Arms the next roll to be split like a 7.
+    """Deal the roll you have just thrown out between yourself and an opponent.
 
-    The player plays this pre-roll; the rule engine's ``roll_dice`` handler
-    reads ``state.turn.binary_disruption_armed`` and jumps to the split
-    assignment phase regardless of the actual roll total.
+    Played after the dice are down but before they are spent, which is the only
+    moment it means anything — you play it because of the numbers you can see.
+
+    It rearranges the roll rather than re-rolling it, so the two dice go one
+    each: a 5 and a 3 send one player 5 and the other 3. That is what separates
+    it from a natural seven, which may be cut anywhere.
+
+    Refuses when nobody can be moved by either die — the card would be spent for
+    nothing, so it stays in hand instead.
     """
-    state.turn.binary_disruption_armed = True
-    return state, [_event("binary_disruption_armed", player=player.username)]
+    from .rules import arm_binary_disruption
+    return state, arm_binary_disruption(state, player, board=board)
 
 
 @register("mass_accretor")
@@ -693,7 +757,7 @@ def _beauchamp(state, player, params, *, board, rng, **kw):
 
 @register("rack_of_torment")
 def _rack_raven(state, player, params, *, board, rng, **kw):
-    return state, send_to_rack(state, player, board)
+    return state, send_to_rack(state, player, board, cause="raven")
 
 
 @register("metallicity")

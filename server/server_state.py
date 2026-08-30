@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .game.board import Board
 from .game.rng import Rng
@@ -108,6 +108,59 @@ class AppState:
         self.lobby.started = False
 
 
+# ---------- loading a save written by an older build -----------------------
+
+
+def _prune_unknown_fields(data: Any, error: ValidationError) -> tuple[Any, list[str]]:
+    """Delete exactly the fields a validation error called ``extra_forbidden``.
+
+    Every model in :mod:`server.game.state` forbids extra fields, which is what
+    keeps a typo'd key from being silently accepted. The cost is that *removing*
+    a field breaks every save that still carries it: the live game refuses to
+    load and is thrown away on the next restart.
+
+    So a save that fails is given one second chance with the offending keys
+    dropped. This only ever runs after a normal load has already failed, and it
+    only touches the exact paths Pydantic named, so a genuinely corrupt file
+    still fails — it does not paper over a save that is wrong in some other way.
+
+    Returns the pruned data and the dotted paths that were removed.
+    """
+    removed: list[str] = []
+    for err in error.errors():
+        if err.get("type") != "extra_forbidden":
+            continue
+        loc = err.get("loc") or ()
+        if not loc:
+            continue
+        node = data
+        try:
+            for key in loc[:-1]:
+                node = node[key]
+            del node[loc[-1]]
+        except (KeyError, IndexError, TypeError):
+            continue
+        removed.append(".".join(str(part) for part in loc))
+    return data, removed
+
+
+def _load_saved_game(raw: dict) -> GameState:
+    """Validate a saved game, retrying once without fields the schema has dropped."""
+    try:
+        return GameState.model_validate(raw)
+    except ValidationError as first:
+        pruned, removed = _prune_unknown_fields(raw, first)
+        if not removed:
+            raise
+        game = GameState.model_validate(pruned)
+        log.warning(
+            "Saved game carried %d field(s) this build no longer knows about; "
+            "dropped and loaded anyway: %s",
+            len(removed), ", ".join(removed),
+        )
+        return game
+
+
 # ---------- persistence helpers for RNG state ------------------------------
 
 
@@ -145,7 +198,7 @@ def build_app_state() -> AppState:
                 state.lobby = Lobby()
         if "game" in saved and saved["game"]:
             try:
-                state.game = GameState.model_validate(saved["game"])
+                state.game = _load_saved_game(saved["game"])
                 rng_info = saved.get("rng") or {}
                 seed = int(rng_info.get("seed", 0))
                 rng = Rng(seed=seed)

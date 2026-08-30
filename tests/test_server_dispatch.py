@@ -158,3 +158,39 @@ def test_stats_saved_before_the_rename_load_without_complaint():
     })
     assert store.get("alice").games_played == 3
     assert store.get("alice").total_steps_taken == 0
+
+
+# ---------------------------------------------------------------------------
+# Saves written by an older build
+# ---------------------------------------------------------------------------
+
+
+def test_a_save_carrying_a_since_removed_field_still_loads():
+    """Every state model forbids extra fields, so dropping a field from the
+    schema would otherwise make the live game unloadable — it fails validation,
+    is discarded on the next restart, and the game in progress is gone."""
+    from server.server_state import _load_saved_game
+
+    _GLOBAL_RNG.set(Rng(seed=1))
+    saved = GameState(
+        players=[PlayerState(username="alice", color="red",
+                             position=BOARD.data.start_space)],
+        turn_order=["alice"],
+    ).model_dump()
+    saved["turn"]["binary_disruption_armed"] = False   # a field this build dropped
+    saved["players"][0]["some_old_flag"] = True
+
+    game = _load_saved_game(saved)
+
+    assert game.players[0].username == "alice"
+    assert not hasattr(game.turn, "binary_disruption_armed")
+
+
+def test_a_genuinely_corrupt_save_is_still_refused():
+    """The retry drops only the exact keys Pydantic named, so it cannot paper
+    over a save that is wrong in some other way."""
+    from pydantic import ValidationError
+    from server.server_state import _load_saved_game
+
+    with pytest.raises(ValidationError):
+        _load_saved_game({"players": "not a list", "turn_order": []})

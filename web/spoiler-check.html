@@ -26,6 +26,10 @@
 </div>
 <div id="raven-slot"></div>
 
+<h2>Binary Disruption (split by the dice)</h2>
+<div class="note">A 5 and a 3 may only be dealt out 5/3 — never 7/1, never 8/0.</div>
+<div id="bd-slot"></div>
+
 <h2>Dice still rolling</h2>
 <div class="note">CHOOSING_PATH must not list destinations (which spell out the roll) until the dice land.</div>
 <div class="bar">
@@ -118,7 +122,25 @@
   document.getElementById("dice-rolling").onclick = () => setDice(true);
   document.getElementById("dice-landed").onclick = () => setDice(false);
 
+  // ---- binary disruption split screen ------------------------------------
+  const bdPanel = renderControlsPanel(document.getElementById("bd-slot"));
+  const bdState = baseState({ game: {
+    phase: "SPLIT_SEVEN_ASSIGN",
+    turn: {
+      roll: [5, 3], consecutive_doubles: 0, extra_turns_queued: 0,
+      visited_this_turn: [], cards_played_this_turn: [],
+      pending_move: null, pending_raven: null, pending_jewel: null,
+      pending_card_change: null,
+      pending_split: {
+        total: 8, source: "binary_disruption",
+        allowed_legs: [3, 5],
+        movable_targets: { Alex: [3, 5] },
+      },
+    },
+  }});
+  bdPanel.update(bdState, ws, {});
+
   setRaven("Tom", false);
   setDice(true);
-  window.__check = { ravenState, diceState, setRaven, setDice };
+  window.__check = { ravenState, diceState, bdState, bdPanel, ws, setRaven, setDice };
 </script>

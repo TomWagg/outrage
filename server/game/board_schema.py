@@ -187,6 +187,10 @@ class BoardRules(BaseModel):
     devereux_grants_coin: bool = True
     #: Space kinds that simply cost you your next turn.
     miss_turn_on_landing_kinds: list[str] = Field(default_factory=list)
+    #: Space id -> the square you are stepped out onto once that missed turn has
+    #: been served. Only needed where staying put would trap the player, i.e.
+    #: where the square's only way out leads straight back onto it.
+    miss_turn_exit_spaces: dict[str, str] = Field(default_factory=dict)
 
 
 class BoardData(BaseModel):

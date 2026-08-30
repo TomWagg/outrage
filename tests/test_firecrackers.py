@@ -85,8 +85,11 @@ def test_firecrackers_end_turn_racks_still_inside_coin_forfeit():
     assert alice.status_turns_remaining == 3
     assert alice.has_coin is False
     assert len(alice.hand) == 1  # coin was paid, hand spared
-    racked = [e for e in events if e["kind"] == "firecrackers_racked"]
-    assert racked and racked[0]["payload"]["penalty"] == "coin"
+    assert "firecrackers_racked" in [e["kind"] for e in events]
+    sent = next(e for e in events if e["kind"] == "sent_to_rack")
+    assert sent["payload"]["penalty"] == "coin"
+    assert sent["payload"]["cause"] == "firecrackers"
+    assert alice.rack_escrow.coin is True
     assert "alice" not in game.firecrackers_affected
 
 
@@ -105,10 +108,11 @@ def test_firecrackers_end_turn_racks_no_coin_discards_hand():
     assert alice.position == BOARD.data.rack_space
     assert alice.status == Status.RACKED
     assert alice.hand == []
-    assert len(game.tower_discard) == 2
-    racked = [e for e in events if e["kind"] == "firecrackers_racked"]
-    assert racked and racked[0]["payload"]["penalty"] == "hand"
-    assert racked[0]["payload"]["cards_discarded"] == 2
+    assert len(alice.rack_escrow.cards) == 2
+    assert game.tower_discard == []   # held until the sentence is served
+    sent = next(e for e in events if e["kind"] == "sent_to_rack")
+    assert sent["payload"]["penalty"] == "hand"
+    assert sent["payload"]["cards_taken"] == 2
 
 
 def test_firecrackers_escapes_when_landing_outside_white_tower():

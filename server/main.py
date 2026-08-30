@@ -140,7 +140,9 @@ def _update_stats_from_events(state: AppState, events: list[dict]) -> None:
             if winner:
                 state.stats.get(winner).wins += 1
 
-        elif kind in ("rack_coin_lost", "rack_hand_lost", "firecrackers_racked"):
+        elif kind == "sent_to_rack":
+            # One event per sentence, whatever route led there — Firecrackers
+            # emits its own banner alongside, which must not double-count.
             username = p.get("player")
             if username:
                 state.stats.get(username).racked_count += 1

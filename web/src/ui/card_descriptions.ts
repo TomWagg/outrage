@@ -101,7 +101,10 @@ export const TOWER_CARDS: Record<string, CardCopy> = {
   },
   "Binary Disruption": {
     title: "Binary Disruption",
-    description: "After rolling, split your roll between yourself and another player as if you had rolled a 7.",
+    description:
+      "Play after you roll, before you move. Deal the two dice out one each " +
+      "between you and another player — a 5 and a 3 sends one of you 5 and " +
+      "the other 3. Unlike a natural 7, you cannot cut the total anywhere else.",
   },
   "Mass Accretor": {
     title: "Mass Accretor",

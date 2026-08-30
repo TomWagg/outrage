@@ -3839,6 +3839,10 @@
       "bench",
       "hospital",
       "shop"
-    ]
+    ],
+    "miss_turn_exit_spaces": {
+      "iw_shop": "ww04_guidebook"
+    },
+    "_note_miss_turn_exit": "The Shop's only neighbour is ww04_guidebook, whose action sends you back to the Shop - so serving the missed turn and staying put is an infinite loop. Listing it here steps the player out to the named square when the miss is served, without re-resolving that square's action. The benches and the Hospital need no entry: their neighbours are ordinary squares."
   }
 }
